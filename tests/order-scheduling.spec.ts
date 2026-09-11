@@ -4,6 +4,16 @@ function eggsCard(page: Page) {
   return page.locator("div", { hasText: "Eggs" }).filter({ has: page.getByText("available") }).last()
 }
 
+/**
+ * Data now persists in SQLite, so this test can no longer rely on a fresh
+ * in-memory store per run — it has to reset the database to the seed state
+ * itself, or a second run would start with the previous run's orders.
+ */
+async function resetDemoData(page: Page) {
+  const response = await page.request.post("/api/reset")
+  expect(response.ok()).toBeTruthy()
+}
+
 async function signIn(page: Page) {
   await page.goto("/sign-in")
   // The staff picker defaults to the first roster entry (Aisha) — round-robin
@@ -27,6 +37,7 @@ async function submitOrder(page: Page, productName: string, quantity: number) {
 }
 
 test("order sequence: stock deduction, round-robin staff, and on-hold shortage", async ({ page }) => {
+  await resetDemoData(page)
   await signIn(page)
 
   // --- Order 1: Suprema Classico x2 -> needs 12 eggs, stock starts at 20 ---

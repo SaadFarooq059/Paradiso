@@ -4,17 +4,25 @@ import { TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { INGREDIENT_INFO, INGREDIENT_ORDER, INITIAL_STOCK } from "@/lib/mock-data"
+import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
 import type { IngredientKey } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface StockLevelsPanelProps {
   available: Record<IngredientKey, number>
+  /**
+   * Total stock ever brought into the pool, from the database — seed plus every
+   * restock. Committed is capacity minus available. This used to be derived from
+   * the INITIAL_STOCK constant, so restocking an ingredient above its seed amount
+   * made committed collapse to 0 and total capacity read lower than what was
+   * actually on hand.
+   */
+  capacity: Record<IngredientKey, number>
 }
 
 const LOW_STOCK_THRESHOLD = 0.2
 
-export function StockLevelsPanel({ available }: StockLevelsPanelProps) {
+export function StockLevelsPanel({ available, capacity }: StockLevelsPanelProps) {
   return (
     <Card className="@container">
       <CardHeader>
@@ -27,7 +35,7 @@ export function StockLevelsPanel({ available }: StockLevelsPanelProps) {
         <div className="grid gap-3 @sm:grid-cols-2 @lg:grid-cols-3">
           {INGREDIENT_ORDER.map((key) => {
             const info = INGREDIENT_INFO[key]
-            const initial = INITIAL_STOCK[key]
+            const initial = capacity[key] ?? 0
             const remaining = Math.max(available[key] ?? 0, 0)
             const committed = Math.max(initial - remaining, 0)
             const remainingRatio = initial > 0 ? remaining / initial : 1

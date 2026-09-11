@@ -1,0 +1,195 @@
+// Paradiso CRM persistence layer.
+//
+// This schema is a direct translation of the shapes that already existed in
+// lib/types.ts and lib/mock-data.ts, so behaviour on every screen is unchanged —
+// only the storage location moves. Where the in-memory model leaned on a
+// module-level constant (INITIAL_STOCK) to derive a number, that number is now a
+// real column instead, because a persisted restock can push stock above its seed
+// value and the derived version silently went wrong (see StockLevel.capacity).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 moved connection URLs out of the schema: the URL now lives in
+// prisma.config.ts for CLI/migrate, and the running client gets a driver adapter.
+datasource db {
+  provider = "sqlite"
+}
+
+/// One of the five ingredients. `key` matches IngredientKey in lib/types.ts
+/// ("eggs" | "mascarpone" | "savoiardi" | "coffee" | "butter") and stays the
+/// stable identifier the UI and API speak in; the numeric id is internal.
+model Ingredient {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  label String
+  /// "" for countable items (eggs), "g" / "ml" otherwise.
+  unit  String
+  /// Display order on the Stock Levels and Restock screens (INGREDIENT_ORDER).
+  sortOrder Int
+
+  stockLevel  StockLevel?
+  recipeItems RecipeItem[]
+  restocks    RestockEntry[]
+
+  @@map("ingredients")
+}
+
+/// A sellable product (Mini / Grande / Suprema Classico).
+model ProductVariant {
+  id          String @id
+  name        String
+  description String
+  servings    String
+  /// Soft delete: the Recipes screen can remove a variant, but orders that
+  /// already reference it must keep rendering their product name and history.
+  archived    Boolean @default(false)
+  /// Display position on the New Order and Recipes screens. Same reason as
+  /// Staff.sortOrder: the in-memory array had an order (Mini, Grande, Suprema)
+  /// that the New Order form also used to pick its default selection, and row
+  /// order out of a database is arbitrary without an explicit column.
+  sortOrder   Int     @default(0)
+
+  recipeItems RecipeItem[]
+  orderItems  OrderItem[]
+
+  @@map("product_variants")
+}
+
+/// One line of a product's recipe: how much of one ingredient a single unit needs.
+/// Together these rows are the `requires` map from ProductVariant in lib/types.ts.
+model RecipeItem {
+  id           Int    @id @default(autoincrement())
+  variantId    String
+  ingredientId Int
+  /// Amount needed per single unit of the product, in the ingredient's unit.
+  amountPerUnit Float
+
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  ingredient Ingredient     @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, ingredientId])
+  @@map("recipe_items")
+}
+
+/// Current stock for one ingredient.
+model StockLevel {
+  id           Int   @id @default(autoincrement())
+  ingredientId Int   @unique
+  /// Uncommitted stock on hand. Scheduling deducts, cancelling and restocking add.
+  available    Float
+  /// Total stock ever brought into the pool (seed + every restock). The Stock
+  /// Levels screen shows committed = capacity - available; on main both of those
+  /// were derived from the INITIAL_STOCK constant, which made "committed" read 0
+  /// and capacity read low as soon as a restock pushed available past the seed.
+  capacity     Float
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@map("stock_levels")
+}
+
+/// A staff member. Doubles as the login identity (dummy auth picks one of these).
+model Staff {
+  id   String @id
+  name String
+  /// "admin" | "staff" — gates the admin-only screens.
+  role String
+  /// Round-robin counter: orders CURRENTLY on this person's plate. Incremented on
+  /// assignment, decremented when an order is cancelled, so it tracks live
+  /// workload rather than lifetime assignments.
+  orderCount Int @default(0)
+  /// Tie-break position for round-robin. In-memory this was free — the roster was
+  /// a JS array and a stable sort on orderCount preserved its order. A database
+  /// returns no guaranteed row order, so without an explicit column two staff on
+  /// an equal count could be picked in either order between runs.
+  sortOrder  Int @default(0)
+
+  assignments ProductionAssignment[]
+
+  @@map("staff")
+}
+
+/// A customer order. Single-product in the UI today, but the line items live in
+/// OrderItem so a multi-product order needs no schema change.
+model Order {
+  id             String   @id @default(uuid())
+  collectionDate DateTime
+  /// One of the six implemented statuses: Scheduled | In Production | Ready |
+  /// Completed | On Hold | Cancelled. SQLite has no enums under Prisma, so this
+  /// is a String, constrained in lib/order-status.ts.
+  status         String
+  /// Ingredient amounts actually deducted when this order was scheduled, frozen
+  /// at that moment as JSON ({ eggs: 12, mascarpone: 1000, ... }). Empty for
+  /// orders that never scheduled. Never recomputed from the live recipe, which
+  /// may have changed since.
+  consumedIngredients String @default("{}")
+  /// Why an order is On Hold, as JSON: [{ ingredient, shortBy }].
+  shortages           String @default("[]")
+  createdAt      DateTime @default(now())
+
+  items         OrderItem[]
+  statusHistory OrderStatusEvent[]
+  assignment    ProductionAssignment?
+
+  @@map("orders")
+}
+
+/// One product line on an order.
+model OrderItem {
+  id        Int    @id @default(autoincrement())
+  orderId   String
+  variantId String
+  quantity  Int
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@map("order_items")
+}
+
+/// One entry in an order's lifecycle timeline, rendered on Order Detail.
+model OrderStatusEvent {
+  id      Int      @id @default(autoincrement())
+  orderId String
+  status  String
+  at      DateTime @default(now())
+  note    String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_events")
+}
+
+/// Which staff member is producing an order. One per order (the UI assigns a
+/// single owner), modelled as its own table so the assignment can carry its own
+/// timestamp and be released on cancellation without mutating the order row.
+model ProductionAssignment {
+  id         Int      @id @default(autoincrement())
+  orderId    String   @unique
+  staffId    String
+  assignedAt DateTime @default(now())
+  /// Set when the order is cancelled: the assignment stays as a historical record
+  /// (Order Detail still shows who had it) but stops counting toward workload.
+  releasedAt DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff Staff @relation(fields: [staffId], references: [id])
+
+  @@index([staffId])
+  @@map("production_assignments")
+}
+
+/// Audit trail for the Restock screen's log.
+model RestockEntry {
+  id           String   @id @default(uuid())
+  ingredientId Int
+  amount       Float
+  at           DateTime @default(now())
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@map("restock_entries")
+}
