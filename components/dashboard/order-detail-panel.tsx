@@ -1,7 +1,7 @@
 "use client"
 
 import { format, formatDistanceToNow } from "date-fns"
-import { ArrowLeft, CheckCircle2, CookingPot, PackageCheck, RotateCcw, XCircle } from "lucide-react"
+import { ArrowLeft, CalendarRange, CheckCircle2, CookingPot, PackageCheck, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ interface OrderDetailPanelProps {
   onComplete: () => void
   onCancel: () => void
   onRecheck: () => void
+  onViewOnCalendar: () => void
 }
 
 export function OrderDetailPanel({
@@ -32,6 +33,7 @@ export function OrderDetailPanel({
   onComplete,
   onCancel,
   onRecheck,
+  onViewOnCalendar,
 }: OrderDetailPanelProps) {
   const consumedEntries = INGREDIENT_ORDER.filter((key) => order.consumedIngredients[key])
   const canCancel =
@@ -68,11 +70,19 @@ export function OrderDetailPanel({
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-2 gap-4 @sm:grid-cols-4">
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col items-start gap-0.5">
               <span className="text-xs text-muted-foreground">Collection date</span>
               <span className="text-sm font-medium text-foreground">
                 {format(order.collectionDate, "PPP")}
               </span>
+              <button
+                type="button"
+                onClick={onViewOnCalendar}
+                className="flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                <CalendarRange className="size-3" />
+                View on calendar
+              </button>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-xs text-muted-foreground">Assigned staff</span>

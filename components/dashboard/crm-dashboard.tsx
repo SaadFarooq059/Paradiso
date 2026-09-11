@@ -75,6 +75,10 @@ export function CrmDashboard() {
   const [variants, setVariants] = useState<ProductVariant[]>(PRODUCT_VARIANTS)
   const [restockLog, setRestockLog] = useState<RestockEntry[]>([])
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  // Which day the Production Calendar is focused on. Lives here rather than inside
+  // the panel so Order Detail can jump the calendar to an order's collection date,
+  // and so the day stays put when you drill into an order and come back.
+  const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
   const variantsById = useMemo(
     () => Object.fromEntries(variants.map((variant) => [variant.id, variant])),
@@ -108,6 +112,24 @@ export function CrmDashboard() {
     )
   }
 
+  /**
+   * Releases an order's staff assignment from that member's workload counter.
+   * orderCount is what pickStaff() sorts on, so it has to mean "orders currently
+   * on this person's plate" — a cancelled order isn't work any more, and leaving
+   * it counted would permanently skew round-robin away from that member.
+   * Clamped at 0 so a staff member renamed mid-session (which detaches them from
+   * their existing orders) can never end up with a negative count.
+   */
+  function unassignStaff(assignedStaff: StaffName) {
+    setStaff((prev) =>
+      prev.map((member) =>
+        member.name === assignedStaff
+          ? { ...member, orderCount: Math.max(0, member.orderCount - 1) }
+          : member
+      )
+    )
+  }
+
   function handleViewChange(nextView: DashboardView) {
     setSelectedOrderId(null)
     setView(nextView)
@@ -119,6 +141,7 @@ export function CrmDashboard() {
 
     const needed = calculateIngredientsNeeded(variant, quantity)
     const shortages = findShortages(needed, stock)
+    const id = crypto.randomUUID()
 
     if (shortages.length === 0) {
       const assignedStaff = pickStaff()
@@ -130,7 +153,7 @@ export function CrmDashboard() {
       assignStaff(assignedStaff)
       setOrders((prev) => [
         {
-          id: crypto.randomUUID(),
+          id,
           productId,
           quantity,
           collectionDate,
@@ -147,7 +170,7 @@ export function CrmDashboard() {
     } else {
       setOrders((prev) => [
         {
-          id: crypto.randomUUID(),
+          id,
           productId,
           quantity,
           collectionDate,
@@ -162,6 +185,11 @@ export function CrmDashboard() {
       ])
       toast.warning("Order put on hold — insufficient stock")
     }
+
+    // Drop straight into the new order's detail view, with Orders as the screen
+    // behind it so "Back" lands on the list instead of the form you just cleared.
+    setView("orders")
+    setSelectedOrderId(id)
   }
 
   function handleRecheckOrder(orderId: string) {
@@ -262,6 +290,9 @@ export function CrmDashboard() {
     if (hadConsumedStock) {
       setStock((prev) => restockIngredients(prev, order.consumedIngredients))
     }
+    if (order.assignedStaff) {
+      unassignStaff(order.assignedStaff)
+    }
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
@@ -270,6 +301,32 @@ export function CrmDashboard() {
       )
     )
     toast.success(hadConsumedStock ? "Order cancelled — ingredients restocked" : "Order cancelled")
+  }
+
+  /** Jumps the Production Calendar to an order's collection date and shows that day. */
+  function handleViewOnCalendar(collectionDate: Date) {
+    setCalendarDate(collectionDate)
+    setSelectedOrderId(null)
+    setView("calendar")
+  }
+
+  /**
+   * Returns every piece of session state to its seed value, so a demo can be
+   * restarted cleanly without reloading the page (a reload would also drop the
+   * sessionStorage-backed sign-in and force signing in again mid-walkthrough).
+   * Seed constants are cloned rather than assigned by reference so the module-level
+   * seeds can never be reached by a later state update.
+   */
+  function handleResetDemoData() {
+    setOrders([])
+    setStock({ ...INITIAL_STOCK })
+    setStaff(INITIAL_STAFF.map((member) => ({ ...member })))
+    setVariants(PRODUCT_VARIANTS.map((variant) => ({ ...variant, requires: { ...variant.requires } })))
+    setRestockLog([])
+    setSelectedOrderId(null)
+    setCalendarDate(new Date())
+    setView("new-order")
+    toast.success("Demo data reset — orders cleared, stock, recipes and staff counts back to seed.")
   }
 
   function handleSaveVariant(variant: ProductVariant) {
@@ -321,6 +378,7 @@ export function CrmDashboard() {
         holdCount={holdCount}
         staff={staff}
         currentUser={currentUser}
+        onResetDemoData={handleResetDemoData}
         onSignOut={() => {
           signOut()
           router.replace("/sign-in")
@@ -343,6 +401,7 @@ export function CrmDashboard() {
               onComplete={() => handleCompleteOrder(selectedOrder.id)}
               onCancel={() => handleCancelOrder(selectedOrder.id)}
               onRecheck={() => handleRecheckOrder(selectedOrder.id)}
+              onViewOnCalendar={() => handleViewOnCalendar(selectedOrder.collectionDate)}
             />
           ) : (
             <>
@@ -354,6 +413,8 @@ export function CrmDashboard() {
                 <ProductionCalendarPanel
                   orders={orders}
                   variantsById={variantsById}
+                  selectedDate={calendarDate}
+                  onSelectDate={setCalendarDate}
                   onSelectOrder={setSelectedOrderId}
                 />
               )}

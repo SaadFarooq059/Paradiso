@@ -10,6 +10,7 @@ import {
   PackagePlus,
   PackageSearch,
   PlusCircle,
+  RotateCcw,
   UserCog,
 } from "lucide-react"
 
@@ -52,10 +53,19 @@ interface SidebarNavProps {
   holdCount: number
   staff: StaffMember[]
   currentUser: StaffMember
+  onResetDemoData: () => void
   onSignOut: () => void
 }
 
-export function SidebarNav({ active, onChange, holdCount, staff, currentUser, onSignOut }: SidebarNavProps) {
+export function SidebarNav({
+  active,
+  onChange,
+  holdCount,
+  staff,
+  currentUser,
+  onResetDemoData,
+  onSignOut,
+}: SidebarNavProps) {
   const [open, setOpen] = useState(false)
   const isAdmin = currentUser.role === "admin"
   const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
@@ -78,7 +88,10 @@ export function SidebarNav({ active, onChange, holdCount, staff, currentUser, on
             ))}
           </nav>
         </div>
-        <SidebarFooter staff={staff} />
+        <div className="flex flex-col gap-4">
+          <ResetDemoDataButton onReset={onResetDemoData} />
+          <SidebarFooter staff={staff} />
+        </div>
       </SidebarBody>
     </Sidebar>
   )
@@ -187,6 +200,39 @@ function SidebarNavButton({
       {hasBadge && !open && (
         <span className="absolute top-1.5 right-1.5 size-2 shrink-0 rounded-full bg-destructive" />
       )}
+    </button>
+  )
+}
+
+/**
+ * Single-click reset, deliberately not behind a confirm step: this is the recovery
+ * control for a live demo, so it has to work on the first click every time, and
+ * everything it clears is session-only mock data that the button itself recreates.
+ * Rendered outside the collapsing footer so the icon stays reachable at the
+ * sidebar's collapsed 60px width, not just on hover-expand.
+ */
+function ResetDemoDataButton({ onReset }: { onReset: () => void }) {
+  const { open, animate, setOpen } = useSidebar()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onReset()
+        if (window.matchMedia("(max-width: 767px)").matches) setOpen(false)
+      }}
+      aria-label="Reset demo data"
+      title="Reset demo data"
+      className="group/sidebar flex w-full items-center gap-2 rounded-lg border border-destructive/30 px-3 py-2 text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+    >
+      <RotateCcw className="size-4 shrink-0" />
+      <span
+        className={cn(
+          "!m-0 overflow-hidden !p-0 whitespace-pre transition-all duration-200",
+          animate ? (open ? "max-w-xs opacity-100" : "max-w-0 opacity-0") : "max-w-xs opacity-100"
+        )}
+      >
+        Reset demo data
+      </span>
     </button>
   )
 }

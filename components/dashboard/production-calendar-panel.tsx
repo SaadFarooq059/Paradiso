@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { format, isSameDay } from "date-fns"
 import { ChevronRight } from "lucide-react"
 
@@ -16,16 +15,19 @@ import { cn } from "@/lib/utils"
 interface ProductionCalendarPanelProps {
   orders: Order[]
   variantsById: Record<string, ProductVariant>
+  /** Focused day. Controlled by the dashboard so Order Detail can jump here. */
+  selectedDate: Date
+  onSelectDate: (date: Date) => void
   onSelectOrder: (orderId: string) => void
 }
 
 export function ProductionCalendarPanel({
   orders,
   variantsById,
+  selectedDate,
+  onSelectDate,
   onSelectOrder,
 }: ProductionCalendarPanelProps) {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-
   const datesWithOrders = orders.map((order) => order.collectionDate)
   const ordersForDay = orders
     .filter((order) => isSameDay(order.collectionDate, selectedDate))
@@ -42,7 +44,7 @@ export function ProductionCalendarPanel({
           <Calendar
             mode="single"
             selected={selectedDate}
-            onSelect={(value) => value && setSelectedDate(value)}
+            onSelect={(value) => value && onSelectDate(value)}
             modifiers={{ hasOrders: datesWithOrders }}
             modifiersClassNames={{ hasOrders: "font-semibold underline decoration-primary/60 decoration-2 underline-offset-4" }}
           />
