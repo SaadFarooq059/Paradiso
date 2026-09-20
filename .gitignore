@@ -13,3 +13,16 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+
+# Local environment. Both prisma.config.ts and lib/prisma.ts fall back to
+# file:./prisma/dev.db, so a fresh clone works without this file.
+.env
+
+# SQLite database file — local state, rebuilt with `prisma migrate dev` + seed.
+# The migrations themselves ARE tracked.
+prisma/*.db
+prisma/dev.db
+prisma/*.db-journal
+
+# TypeScript incremental build cache — a build artifact, rewritten on every typecheck.
+tsconfig.tsbuildinfo
