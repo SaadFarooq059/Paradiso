@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 
 import { useAuth } from "@/components/auth/auth-context"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
@@ -20,17 +19,8 @@ import { ReportsAnalyticsPanel } from "@/components/dashboard/reports-analytics-
 import { type DashboardView, isPreviewView, SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
-import { INGREDIENT_INFO, INITIAL_STAFF, INITIAL_STOCK, PRODUCT_VARIANTS } from "@/lib/mock-data"
-import { calculateIngredientsNeeded, deductStock, findShortages, restockIngredients } from "@/lib/order-engine"
-import type {
-  IngredientKey,
-  Order,
-  OrderStatus,
-  ProductVariant,
-  RestockEntry,
-  StaffMember,
-  StaffName,
-} from "@/lib/types"
+import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
+import type { IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 
 const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff"]
 
@@ -87,33 +77,25 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
 
 export function CrmDashboard() {
   const router = useRouter()
-  const { currentUser, isLoading, signOut } = useAuth()
+  const { currentUser, isLoading: isAuthLoading, signOut } = useAuth()
+  const { data, variantsById, isLoading: isDataLoading, mutate } = useDashboardData()
   const [view, setView] = useState<DashboardView>("new-order")
-  const [orders, setOrders] = useState<Order[]>([])
-  const [stock, setStock] = useState<Record<IngredientKey, number>>(INITIAL_STOCK)
-  const [staff, setStaff] = useState<StaffMember[]>(INITIAL_STAFF)
-  const [variants, setVariants] = useState<ProductVariant[]>(PRODUCT_VARIANTS)
-  const [restockLog, setRestockLog] = useState<RestockEntry[]>([])
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   // Which day the Production Calendar is focused on. Lives here rather than inside
   // the panel so Order Detail can jump the calendar to an order's collection date,
   // and so the day stays put when you drill into an order and come back.
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
-  const variantsById = useMemo(
-    () => Object.fromEntries(variants.map((variant) => [variant.id, variant])),
-    [variants]
-  )
-
+  const { orders, stock, capacity, staff, variants, restockLog } = data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
   const isAdmin = currentUser?.role === "admin"
 
   useEffect(() => {
-    if (!isLoading && !currentUser) {
+    if (!isAuthLoading && !currentUser) {
       router.replace("/sign-in")
     }
-  }, [isLoading, currentUser, router])
+  }, [isAuthLoading, currentUser, router])
 
   useEffect(() => {
     if (currentUser && !isAdmin && ADMIN_ONLY_VIEWS.includes(view)) {
@@ -121,206 +103,24 @@ export function CrmDashboard() {
     }
   }, [currentUser, isAdmin, view])
 
-  function pickStaff(): StaffName | null {
-    if (staff.length === 0) return null
-    return [...staff].sort((a, b) => a.orderCount - b.orderCount)[0].name
-  }
-
-  function assignStaff(assignedStaff: StaffName) {
-    setStaff((prev) =>
-      prev.map((member) => (member.name === assignedStaff ? { ...member, orderCount: member.orderCount + 1 } : member))
-    )
-  }
-
-  /**
-   * Releases an order's staff assignment from that member's workload counter.
-   * orderCount is what pickStaff() sorts on, so it has to mean "orders currently
-   * on this person's plate" — a cancelled order isn't work any more, and leaving
-   * it counted would permanently skew round-robin away from that member.
-   * Clamped at 0 so a staff member renamed mid-session (which detaches them from
-   * their existing orders) can never end up with a negative count.
-   */
-  function unassignStaff(assignedStaff: StaffName) {
-    setStaff((prev) =>
-      prev.map((member) =>
-        member.name === assignedStaff
-          ? { ...member, orderCount: Math.max(0, member.orderCount - 1) }
-          : member
-      )
-    )
-  }
-
   function handleViewChange(nextView: DashboardView) {
     setSelectedOrderId(null)
     setView(nextView)
   }
 
-  function handleNewOrder(productId: string, quantity: number, collectionDate: Date) {
-    const variant = variantsById[productId]
-    if (!variant) return
-
-    const needed = calculateIngredientsNeeded(variant, quantity)
-    const shortages = findShortages(needed, stock)
-    const id = crypto.randomUUID()
-
-    if (shortages.length === 0) {
-      const assignedStaff = pickStaff()
-      if (!assignedStaff) {
-        toast.error("Can't schedule — there's no staff to assign. Add staff in Staff Management.")
-        return
-      }
-      setStock((prev) => deductStock(prev, needed))
-      assignStaff(assignedStaff)
-      setOrders((prev) => [
-        {
-          id,
-          productId,
-          quantity,
-          collectionDate,
-          status: "Scheduled",
-          assignedStaff,
-          shortages: [],
-          consumedIngredients: needed,
-          statusHistory: [{ status: "Scheduled", at: Date.now() }],
-          createdAt: Date.now(),
-        },
-        ...prev,
-      ])
-      toast.success(`Order scheduled and assigned to ${assignedStaff}`)
-    } else {
-      setOrders((prev) => [
-        {
-          id,
-          productId,
-          quantity,
-          collectionDate,
-          status: "On Hold",
-          assignedStaff: null,
-          shortages,
-          consumedIngredients: {},
-          statusHistory: [{ status: "On Hold", at: Date.now() }],
-          createdAt: Date.now(),
-        },
-        ...prev,
-      ])
-      toast.warning("Order put on hold — insufficient stock")
-    }
-
+  async function handleNewOrder(productId: string, quantity: number, collectionDate: Date) {
+    const orderId = await mutate("/api/orders", {
+      body: JSON.stringify({ productId, quantity, collectionDate: collectionDate.toISOString() }),
+    })
+    if (!orderId) return
     // Drop straight into the new order's detail view, with Orders as the screen
     // behind it so "Back" lands on the list instead of the form you just cleared.
     setView("orders")
-    setSelectedOrderId(id)
+    setSelectedOrderId(orderId)
   }
 
-  function handleRecheckOrder(orderId: string) {
-    const order = orders.find((o) => o.id === orderId)
-    if (!order || order.status !== "On Hold") return
-
-    const variant = variantsById[order.productId]
-    if (!variant) {
-      toast.error("Can't re-check — this product's recipe no longer exists.")
-      return
-    }
-
-    const needed = calculateIngredientsNeeded(variant, order.quantity)
-    const shortages = findShortages(needed, stock)
-
-    if (shortages.length === 0) {
-      const assignedStaff = pickStaff()
-      if (!assignedStaff) {
-        toast.error("Can't re-check — there's no staff to assign. Add staff in Staff Management.")
-        return
-      }
-      setStock((prev) => deductStock(prev, needed))
-      assignStaff(assignedStaff)
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: "Scheduled",
-                assignedStaff,
-                shortages: [],
-                consumedIngredients: needed,
-                statusHistory: [...o.statusHistory, { status: "Scheduled", at: Date.now(), note: "Re-checked and scheduled" }],
-              }
-            : o
-        )
-      )
-      toast.success(`Order re-checked and scheduled — assigned to ${assignedStaff}`)
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                shortages,
-                statusHistory: [...o.statusHistory, { status: "On Hold", at: Date.now(), note: "Re-checked — still short" }],
-              }
-            : o
-        )
-      )
-      toast.warning("Still insufficient stock")
-    }
-  }
-
-  function handleStartProduction(orderId: string) {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId && o.status === "Scheduled"
-          ? {
-              ...o,
-              status: "In Production",
-              statusHistory: [...o.statusHistory, { status: "In Production", at: Date.now() }],
-            }
-          : o
-      )
-    )
-    toast.success("Order moved to production")
-  }
-
-  function handleMarkReady(orderId: string) {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId && o.status === "In Production"
-          ? { ...o, status: "Ready", statusHistory: [...o.statusHistory, { status: "Ready", at: Date.now() }] }
-          : o
-      )
-    )
-    toast.success("Order marked ready")
-  }
-
-  function handleCompleteOrder(orderId: string) {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId && o.status === "Ready"
-          ? { ...o, status: "Completed", statusHistory: [...o.statusHistory, { status: "Completed", at: Date.now() }] }
-          : o
-      )
-    )
-    toast.success("Order marked completed")
-  }
-
-  function handleCancelOrder(orderId: string) {
-    const order = orders.find((o) => o.id === orderId)
-    const cancellableStatuses: OrderStatus[] = ["Scheduled", "In Production", "Ready", "On Hold"]
-    if (!order || !cancellableStatuses.includes(order.status)) return
-
-    const hadConsumedStock = Object.keys(order.consumedIngredients).length > 0
-    if (hadConsumedStock) {
-      setStock((prev) => restockIngredients(prev, order.consumedIngredients))
-    }
-    if (order.assignedStaff) {
-      unassignStaff(order.assignedStaff)
-    }
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, status: "Cancelled", statusHistory: [...o.statusHistory, { status: "Cancelled", at: Date.now() }] }
-          : o
-      )
-    )
-    toast.success(hadConsumedStock ? "Order cancelled — ingredients restocked" : "Order cancelled")
+  function orderAction(orderId: string, action: string) {
+    return mutate(`/api/orders/${orderId}`, { body: JSON.stringify({ action }) })
   }
 
   /** Jumps the Production Calendar to an order's collection date and shows that day. */
@@ -331,58 +131,37 @@ export function CrmDashboard() {
   }
 
   /**
-   * Returns every piece of session state to its seed value, so a demo can be
-   * restarted cleanly without reloading the page (a reload would also drop the
-   * sessionStorage-backed sign-in and force signing in again mid-walkthrough).
-   * Seed constants are cloned rather than assigned by reference so the module-level
-   * seeds can never be reached by a later state update.
+   * Restores the seeded demo state. Unlike the in-memory version this has to clear
+   * persisted rows, so it goes through the server and adopts what comes back.
    */
-  function handleResetDemoData() {
-    setOrders([])
-    setStock({ ...INITIAL_STOCK })
-    setStaff(INITIAL_STAFF.map((member) => ({ ...member })))
-    setVariants(PRODUCT_VARIANTS.map((variant) => ({ ...variant, requires: { ...variant.requires } })))
-    setRestockLog([])
+  async function handleResetDemoData() {
+    await mutate("/api/reset")
     setSelectedOrderId(null)
     setCalendarDate(new Date())
     setView("new-order")
-    toast.success("Demo data reset — orders cleared, stock, recipes and staff counts back to seed.")
   }
 
   function handleSaveVariant(variant: ProductVariant) {
-    setVariants((prev) => {
-      const exists = prev.some((v) => v.id === variant.id)
-      return exists ? prev.map((v) => (v.id === variant.id ? variant : v)) : [...prev, variant]
-    })
-    toast.success(`Recipe saved: ${variant.name}`)
+    void mutate("/api/variants", { body: JSON.stringify(variant) })
   }
 
   function handleDeleteVariant(id: string) {
-    setVariants((prev) => prev.filter((v) => v.id !== id))
-    toast.success("Recipe removed")
+    void mutate(`/api/variants/${id}`, { method: "DELETE" })
   }
 
   function handleRestock(ingredient: IngredientKey, amount: number) {
-    if (amount <= 0) return
-    setStock((prev) => restockIngredients(prev, { [ingredient]: amount }))
-    setRestockLog((prev) => [{ id: crypto.randomUUID(), ingredient, amount, at: Date.now() }, ...prev])
-    toast.success(`Restocked ${amount}${INGREDIENT_INFO[ingredient].unit} ${INGREDIENT_INFO[ingredient].label.toLowerCase()}`)
+    void mutate("/api/restock", { body: JSON.stringify({ ingredient, amount }) })
   }
 
   function handleSaveStaffMember(member: StaffMember) {
-    setStaff((prev) => {
-      const exists = prev.some((m) => m.id === member.id)
-      return exists ? prev.map((m) => (m.id === member.id ? member : m)) : [...prev, member]
-    })
-    toast.success(`Staff saved: ${member.name}`)
+    void mutate("/api/staff", { body: JSON.stringify(member) })
   }
 
   function handleDeleteStaffMember(id: string) {
-    setStaff((prev) => prev.filter((m) => m.id !== id))
-    toast.success("Staff member removed")
+    void mutate(`/api/staff/${id}`, { method: "DELETE" })
   }
 
-  if (isLoading || !currentUser) {
+  if (isAuthLoading || isDataLoading || !currentUser) {
     return <div className="h-dvh w-full bg-background" />
   }
 
@@ -412,17 +191,19 @@ export function CrmDashboard() {
         <main className="@container flex-1 space-y-6 overflow-x-hidden px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
           {/* Preview screens are mockups, so the real stats strip is hidden above them
               to avoid pairing live numbers with a not-built-yet screen. */}
-          {!selectedOrder && !isPreviewView(view) && <DashboardStats orders={orders} stock={stock} />}
+          {!selectedOrder && !isPreviewView(view) && (
+            <DashboardStats orders={orders} stock={stock} capacity={capacity} />
+          )}
           {selectedOrder ? (
             <OrderDetailPanel
               order={selectedOrder}
               variant={variantsById[selectedOrder.productId]}
               onBack={() => setSelectedOrderId(null)}
-              onStartProduction={() => handleStartProduction(selectedOrder.id)}
-              onMarkReady={() => handleMarkReady(selectedOrder.id)}
-              onComplete={() => handleCompleteOrder(selectedOrder.id)}
-              onCancel={() => handleCancelOrder(selectedOrder.id)}
-              onRecheck={() => handleRecheckOrder(selectedOrder.id)}
+              onStartProduction={() => void orderAction(selectedOrder.id, "start")}
+              onMarkReady={() => void orderAction(selectedOrder.id, "ready")}
+              onComplete={() => void orderAction(selectedOrder.id, "complete")}
+              onCancel={() => void orderAction(selectedOrder.id, "cancel")}
+              onRecheck={() => void orderAction(selectedOrder.id, "recheck")}
               onViewOnCalendar={() => handleViewOnCalendar(selectedOrder.collectionDate)}
             />
           ) : (
@@ -450,7 +231,7 @@ export function CrmDashboard() {
               {view === "restock" && (
                 <IngredientsRestockPanel stock={stock} restockLog={restockLog} onRestock={handleRestock} />
               )}
-              {view === "stock" && <StockLevelsPanel available={stock} />}
+              {view === "stock" && <StockLevelsPanel available={stock} capacity={capacity} />}
               {view === "reports" && (
                 <ReportsAnalyticsPanel orders={orders} variantsById={variantsById} staff={staff} />
               )}

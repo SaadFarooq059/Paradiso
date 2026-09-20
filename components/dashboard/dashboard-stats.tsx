@@ -1,6 +1,5 @@
 import { CalendarCheck, ClipboardList, PauseCircle, TriangleAlert } from "lucide-react"
 
-import { INITIAL_STOCK } from "@/lib/mock-data"
 import type { IngredientKey, Order } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -9,14 +8,20 @@ const LOW_STOCK_THRESHOLD = 0.2
 interface DashboardStatsProps {
   orders: Order[]
   stock: Record<IngredientKey, number>
+  /**
+   * Total stock in the pool per ingredient, from the database. Previously this
+   * compared against the INITIAL_STOCK constant, which under-reported capacity as
+   * soon as a restock pushed an ingredient above its seed amount.
+   */
+  capacity: Record<IngredientKey, number>
 }
 
-export function DashboardStats({ orders, stock }: DashboardStatsProps) {
+export function DashboardStats({ orders, stock, capacity }: DashboardStatsProps) {
   const scheduled = orders.filter((order) => order.status === "Scheduled").length
   const onHold = orders.filter((order) => order.status === "On Hold").length
   const lowStock = Object.entries(stock).filter(([key, remaining]) => {
-    const initial = INITIAL_STOCK[key as IngredientKey]
-    return initial > 0 && Math.max(remaining, 0) / initial <= LOW_STOCK_THRESHOLD
+    const total = capacity[key as IngredientKey] ?? 0
+    return total > 0 && Math.max(remaining, 0) / total <= LOW_STOCK_THRESHOLD
   }).length
 
   const stats = [
