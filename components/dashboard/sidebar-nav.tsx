@@ -5,12 +5,16 @@ import {
   BarChart3,
   CalendarRange,
   ClipboardList,
+  HeartHandshake,
   LogOut,
   NotebookPen,
   PackagePlus,
   PackageSearch,
   PlusCircle,
+  Receipt,
   RotateCcw,
+  ShieldCheck,
+  Store,
   UserCog,
 } from "lucide-react"
 
@@ -28,6 +32,17 @@ export type DashboardView =
   | "stock"
   | "reports"
   | "staff"
+  | PreviewView
+
+/**
+ * Visual-only mockups shown in the demo under a separate "Coming Soon" heading.
+ * These render static markup and hold no state — see components/dashboard/preview-*.
+ */
+export type PreviewView =
+  | "preview-logins"
+  | "preview-storefront"
+  | "preview-weddings"
+  | "preview-accounts"
 
 interface NavItem {
   id: DashboardView
@@ -46,6 +61,19 @@ const NAV_ITEMS: NavItem[] = [
   { id: "reports", label: "Reports & Analytics", icon: BarChart3 },
   { id: "staff", label: "Staff Management", icon: UserCog, adminOnly: true },
 ]
+
+const PREVIEW_NAV_ITEMS: NavItem[] = [
+  { id: "preview-logins", label: "Staff Logins (preview)", icon: ShieldCheck },
+  { id: "preview-storefront", label: "Customer Website (preview)", icon: Store },
+  { id: "preview-weddings", label: "Wedding Enquiries (preview)", icon: HeartHandshake },
+  { id: "preview-accounts", label: "Accounts Sync (preview)", icon: Receipt },
+]
+
+export const PREVIEW_VIEWS: DashboardView[] = PREVIEW_NAV_ITEMS.map((item) => item.id)
+
+export function isPreviewView(view: DashboardView): view is PreviewView {
+  return PREVIEW_VIEWS.includes(view)
+}
 
 interface SidebarNavProps {
   active: DashboardView
@@ -87,6 +115,7 @@ export function SidebarNav({
               />
             ))}
           </nav>
+          <PreviewNavGroup active={active} onChange={onChange} />
         </div>
         <div className="flex flex-col gap-4">
           <ResetDemoDataButton onReset={onResetDemoData} />
@@ -199,6 +228,87 @@ function SidebarNavButton({
       )}
       {hasBadge && !open && (
         <span className="absolute top-1.5 right-1.5 size-2 shrink-0 rounded-full bg-destructive" />
+      )}
+    </button>
+  )
+}
+
+/**
+ * The "Coming Soon" block: visually separated from the working nav by a divider,
+ * a heading and a dashed/muted button treatment, so nothing in here can be mistaken
+ * for a built screen during the demo.
+ */
+function PreviewNavGroup({
+  active,
+  onChange,
+}: {
+  active: DashboardView
+  onChange: (view: DashboardView) => void
+}) {
+  const { open, animate } = useSidebar()
+  return (
+    <div className="mt-5 border-t border-dashed border-sidebar-border pt-4">
+      <span
+        className={cn(
+          "block overflow-hidden px-3 text-[0.65rem] font-semibold tracking-wider whitespace-pre text-muted-foreground uppercase transition-all duration-200",
+          animate ? (open ? "max-w-xs opacity-100" : "max-w-0 opacity-0") : "max-w-xs opacity-100"
+        )}
+      >
+        Coming soon
+      </span>
+      <nav className="mt-1.5 flex flex-col gap-0.5">
+        {PREVIEW_NAV_ITEMS.map((item) => (
+          <PreviewNavButton
+            key={item.id}
+            item={item}
+            isActive={active === item.id}
+            onClick={() => onChange(item.id)}
+          />
+        ))}
+      </nav>
+    </div>
+  )
+}
+
+function PreviewNavButton({
+  item,
+  isActive,
+  onClick,
+}: {
+  item: NavItem
+  isActive: boolean
+  onClick: () => void
+}) {
+  const { open, animate, setOpen } = useSidebar()
+  const Icon = item.icon
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onClick()
+        if (window.matchMedia("(max-width: 767px)").matches) setOpen(false)
+      }}
+      aria-label={item.label}
+      title={`${item.label} — not built yet`}
+      className={cn(
+        "group/sidebar relative flex w-full items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-left text-sm font-medium transition-colors",
+        isActive
+          ? "border-amber-500/60 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+          : "border-sidebar-border/70 text-muted-foreground hover:border-amber-500/40 hover:bg-amber-500/5"
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span
+        className={cn(
+          "!m-0 overflow-hidden !p-0 whitespace-pre transition-all duration-200 group-hover/sidebar:translate-x-1",
+          animate ? (open ? "max-w-xs opacity-100" : "max-w-0 opacity-0") : "max-w-xs opacity-100"
+        )}
+      >
+        {item.label}
+      </span>
+      {!open && (
+        <span className="absolute top-1.5 right-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
       )}
     </button>
   )

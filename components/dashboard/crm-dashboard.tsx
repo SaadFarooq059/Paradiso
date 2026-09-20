@@ -11,9 +11,13 @@ import { NewOrderForm } from "@/components/dashboard/new-order-form"
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel"
 import { OrdersTable } from "@/components/dashboard/orders-table"
 import { ProductionCalendarPanel } from "@/components/dashboard/production-calendar-panel"
+import { PreviewAccountsSyncPanel } from "@/components/dashboard/preview-accounts-sync-panel"
+import { PreviewCustomerWebsitePanel } from "@/components/dashboard/preview-customer-website-panel"
+import { PreviewStaffLoginsPanel } from "@/components/dashboard/preview-staff-logins-panel"
+import { PreviewWeddingEnquiriesPanel } from "@/components/dashboard/preview-wedding-enquiries-panel"
 import { ProductsRecipesPanel } from "@/components/dashboard/products-recipes-panel"
 import { ReportsAnalyticsPanel } from "@/components/dashboard/reports-analytics-panel"
-import { type DashboardView, SidebarNav } from "@/components/dashboard/sidebar-nav"
+import { type DashboardView, isPreviewView, SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { INGREDIENT_INFO, INITIAL_STAFF, INITIAL_STOCK, PRODUCT_VARIANTS } from "@/lib/mock-data"
@@ -62,6 +66,22 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
   staff: {
     title: "Staff Management",
     description: "Add, edit, and remove staff — admin only.",
+  },
+  "preview-logins": {
+    title: "Staff Logins & Permissions",
+    description: "Preview only — a look at how individual logins and role-based views would work.",
+  },
+  "preview-storefront": {
+    title: "Customer Website",
+    description: "Preview only — how a customer would order from the website themselves.",
+  },
+  "preview-weddings": {
+    title: "Wedding Enquiries",
+    description: "Preview only — how wedding enquiries, quotes and deposits would be handled.",
+  },
+  "preview-accounts": {
+    title: "Accounts Sync",
+    description: "Preview only — how a completed order would raise an invoice in the accounts package.",
   },
 }
 
@@ -390,7 +410,9 @@ export function CrmDashboard() {
           <p className="text-sm text-muted-foreground">{meta.description}</p>
         </header>
         <main className="@container flex-1 space-y-6 overflow-x-hidden px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
-          {!selectedOrder && <DashboardStats orders={orders} stock={stock} />}
+          {/* Preview screens are mockups, so the real stats strip is hidden above them
+              to avoid pairing live numbers with a not-built-yet screen. */}
+          {!selectedOrder && !isPreviewView(view) && <DashboardStats orders={orders} stock={stock} />}
           {selectedOrder ? (
             <OrderDetailPanel
               order={selectedOrder}
@@ -440,6 +462,12 @@ export function CrmDashboard() {
                   onDelete={handleDeleteStaffMember}
                 />
               )}
+
+              {/* Coming Soon mockups — static markup only, no app state touched. */}
+              {view === "preview-logins" && <PreviewStaffLoginsPanel />}
+              {view === "preview-storefront" && <PreviewCustomerWebsitePanel />}
+              {view === "preview-weddings" && <PreviewWeddingEnquiriesPanel />}
+              {view === "preview-accounts" && <PreviewAccountsSyncPanel />}
             </>
           )}
         </main>
