@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma"
 import { parseBlockedWeekdays } from "@/lib/production-schedule"
+import {
+  demandByProductionDay,
+  totalCommitted,
+  type StockRecord,
+} from "@/lib/stock-projection"
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
 import type {
   CalendarSettings,
@@ -65,12 +70,9 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     readCalendarSettings(db),
   ])
 
-  const stock = {} as Record<IngredientKey, number>
-  const capacity = {} as Record<IngredientKey, number>
+  const onHand = {} as StockRecord
   for (const ingredient of ingredients) {
-    const key = ingredient.key as IngredientKey
-    stock[key] = ingredient.stockLevel?.available ?? 0
-    capacity[key] = ingredient.stockLevel?.capacity ?? 0
+    onHand[ingredient.key as IngredientKey] = ingredient.stockLevel?.onHand ?? 0
   }
 
   const serializedVariants: ProductVariant[] = variants.map((variant) => ({
@@ -114,6 +116,29 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     } satisfies SerializedOrder
   })
 
+  // Demand per production day, derived from the live orders' frozen snapshots.
+  // Everything the Stock Levels screen shows now comes from here rather than from
+  // two stored columns: "committed" is what live orders still owe, and the
+  // headline figure is what is left uncommitted.
+  const variantLeadTimes = Object.fromEntries(
+    variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
+  )
+  const demand = demandByProductionDay(
+    serializedOrders.map((order) => ({
+      collectionDate: new Date(order.collectionDate),
+      productId: order.productId,
+      status: order.status,
+      consumedIngredients: order.consumedIngredients,
+    })),
+    variantLeadTimes
+  )
+  const committed = totalCommitted(demand)
+  const uncommitted = {} as StockRecord
+  for (const ingredient of ingredients) {
+    const key = ingredient.key as IngredientKey
+    uncommitted[key] = (onHand[key] ?? 0) - (committed[key] ?? 0)
+  }
+
   return {
     variants: serializedVariants,
     ingredients: ingredients.map((ingredient) => ({
@@ -121,8 +146,14 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       label: ingredient.label,
       unit: ingredient.unit,
     })),
-    stock,
-    capacity,
+    stock: uncommitted,
+    capacity: onHand,
+    productionDemand: demand.map((day) => ({
+      day: day.day,
+      date: day.date.toISOString(),
+      amounts: day.amounts,
+      orderCount: day.orderCount,
+    })),
     staff: serializedStaff,
     orders: serializedOrders,
     restockLog: restocks.map((entry) => ({

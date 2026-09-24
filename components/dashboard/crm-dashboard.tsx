@@ -86,7 +86,8 @@ export function CrmDashboard() {
   // and so the day stays put when you drill into an order and come back.
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
-  const { orders, stock, capacity, staff, variants, restockLog, calendarSettings } = data
+  const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand } =
+    data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
   const isAdmin = currentUser?.role === "admin"
@@ -224,6 +225,8 @@ export function CrmDashboard() {
                 <ProductionCalendarPanel
                   orders={orders}
                   variantsById={variantsById}
+                  productionDemand={productionDemand}
+                  onHand={capacity}
                   selectedDate={calendarDate}
                   onSelectDate={setCalendarDate}
                   onSelectOrder={setSelectedOrderId}

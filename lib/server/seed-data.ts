@@ -40,8 +40,9 @@ export async function seedDatabase() {
           label: info.label,
           unit: info.unit,
           sortOrder: index,
-          // Nothing committed yet, so capacity starts equal to available.
-          stockLevel: { create: { available: starting, capacity: starting } },
+          // The ledger stores what is physically in the building; nothing is
+          // committed against it until an order is scheduled.
+          stockLevel: { create: { onHand: starting } },
         },
       })
     }

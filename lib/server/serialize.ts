@@ -19,17 +19,31 @@ export interface SerializedOrder extends Omit<Order, "collectionDate"> {
   collectionDate: string
 }
 
+export interface SerializedProductionDayDemand {
+  /** yyyy-mm-dd identity for the production day. */
+  day: string
+  date: string
+  amounts: IngredientAmounts
+  orderCount: number
+}
+
 export interface DashboardState {
   variants: ProductVariant[]
   ingredients: { key: IngredientKey; label: string; unit: string }[]
   /** Uncommitted stock on hand, keyed by ingredient. */
   stock: Record<IngredientKey, number>
   /**
-   * Total stock brought into the pool. The Stock Levels screen shows
-   * committed = capacity - available; on main both came from the INITIAL_STOCK
-   * constant, so a restock above the seed value made committed read 0.
+   * What is physically in the building. The Stock Levels screen shows
+   * committed = capacity - stock; both sides are now derived from the ledger
+   * rather than stored, so a restock above the seed value can no longer make
+   * committed read 0.
    */
   capacity: Record<IngredientKey, number>
+  /**
+   * Ingredient demand per production day, oldest first — the forward projection.
+   * Answers "what is needed on the 23rd" rather than only "is there enough now".
+   */
+  productionDemand: SerializedProductionDayDemand[]
   staff: StaffMember[]
   orders: SerializedOrder[]
   restockLog: { id: string; ingredient: IngredientKey; amount: number; at: number }[]

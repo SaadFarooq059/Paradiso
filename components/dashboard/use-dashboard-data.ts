@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import type { DashboardState, SerializedOrder } from "@/lib/server/serialize"
+import type {
+  DashboardState,
+  SerializedOrder,
+  SerializedProductionDayDemand,
+} from "@/lib/server/serialize"
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
 import type {
   CalendarSettings,
@@ -24,6 +28,13 @@ export interface DashboardData {
   orders: Order[]
   restockLog: RestockEntry[]
   calendarSettings: CalendarSettings
+  /** Forward projection: ingredient demand per production day, oldest first. */
+  productionDemand: ProductionDayDemand[]
+}
+
+/** A production day's demand, with the date revived from the wire. */
+export interface ProductionDayDemand extends Omit<SerializedProductionDayDemand, "date"> {
+  date: Date
 }
 
 const EMPTY: DashboardData = {
@@ -36,6 +47,7 @@ const EMPTY: DashboardData = {
   restockLog: [],
   // Only ever on screen for the moment before the first fetch lands.
   calendarSettings: INITIAL_CALENDAR_SETTINGS,
+  productionDemand: [],
 }
 
 function reviveOrder(order: SerializedOrder): Order {
@@ -43,7 +55,11 @@ function reviveOrder(order: SerializedOrder): Order {
 }
 
 function revive(state: DashboardState): DashboardData {
-  return { ...state, orders: state.orders.map(reviveOrder) }
+  return {
+    ...state,
+    orders: state.orders.map(reviveOrder),
+    productionDemand: state.productionDemand.map((day) => ({ ...day, date: new Date(day.date) })),
+  }
 }
 
 interface MutationResponse {

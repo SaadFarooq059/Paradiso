@@ -103,13 +103,15 @@ model RecipeItem {
 model StockLevel {
   id           Int   @id @default(autoincrement())
   ingredientId Int   @unique
-  /// Uncommitted stock on hand. Scheduling deducts, cancelling and restocking add.
-  available    Float
-  /// Total stock ever brought into the pool (seed + every restock). The Stock
-  /// Levels screen shows committed = capacity - available; on main both of those
-  /// were derived from the INITIAL_STOCK constant, which made "committed" read 0
-  /// and capacity read low as soon as a restock pushed available past the seed.
-  capacity     Float
+  /// What is physically in the building. Only a restock moves this: under the
+  /// dated ledger, scheduling an order records demand against its production day
+  /// rather than deducting here, and cancelling simply removes that demand again.
+  ///
+  /// The `capacity` column this model used to carry is gone. It existed to hold
+  /// the total ever brought in, because `available` was being eaten by orders;
+  /// now that orders leave it alone the two are the same number, and "committed"
+  /// is derived from live orders' demand instead of from the gap between them.
+  onHand       Float
 
   ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 

@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma"
+import { calculateIngredientsNeeded, restockIngredients } from "@/lib/order-engine"
 import {
-  calculateIngredientsNeeded,
-  deductStock,
-  findShortages,
-  restockIngredients,
-} from "@/lib/order-engine"
+  demandByProductionDay,
+  shortagesAfterAdding,
+  type StockRecord,
+} from "@/lib/stock-projection"
 import { loadDashboardState, readCalendarSettings } from "@/lib/server/state"
 import {
   applyEarliestCollectionTime,
@@ -13,7 +13,7 @@ import {
   productionDateFor,
   type UnavailableReason,
 } from "@/lib/production-schedule"
-import type { DashboardState } from "@/lib/server/serialize"
+import { parseConsumed, type DashboardState } from "@/lib/server/serialize"
 import type {
   IngredientAmounts,
   IngredientKey,
@@ -23,49 +23,69 @@ import type {
 } from "@/lib/types"
 
 /**
- * Server-side order scheduling. The decision rules are unchanged from the
- * in-memory prototype — the same four pure functions in lib/order-engine.ts still
- * decide everything; they now read stock out of the database inside a transaction
- * instead of out of React state, and write the result back.
+ * Server-side order scheduling.
  *
- * Everything runs in an interactive transaction because the read-decide-write
- * sequence is no longer atomic the way a single React setState was: two orders
- * submitted at once could both see the same stock and both deduct it.
+ * Stock is a dated ledger: StockLevel.onHand is what is physically in the
+ * building and only a restock moves it. Scheduling an order records demand
+ * against its production day — the order's frozen consumedIngredients snapshot
+ * *is* that demand — and feasibility asks whether any day's running balance
+ * would go negative, not whether today's total is big enough. Cancelling takes
+ * the order out of the live set, which removes its demand by itself; there is
+ * nothing to refund because nothing was deducted.
+ *
+ * Everything still runs in an interactive transaction: the read-decide-write
+ * sequence is not atomic the way a single React setState was, and two orders
+ * submitted at once must not both be told the same day has room.
  */
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
-/** Current available stock as the plain record the engine functions expect. */
-async function readStock(tx: Tx): Promise<Record<IngredientKey, number>> {
+/** What is physically in the building, per ingredient. */
+async function readOnHand(tx: Tx): Promise<StockRecord> {
   const ingredients = await tx.ingredient.findMany({ include: { stockLevel: true } })
-  const stock = {} as Record<IngredientKey, number>
+  const onHand = {} as StockRecord
   for (const ingredient of ingredients) {
-    stock[ingredient.key as IngredientKey] = ingredient.stockLevel?.available ?? 0
+    onHand[ingredient.key as IngredientKey] = ingredient.stockLevel?.onHand ?? 0
   }
-  return stock
+  return onHand
 }
 
-/** Writes back only the ingredients whose available amount actually changed. */
-async function writeStock(
-  tx: Tx,
-  before: Record<IngredientKey, number>,
-  after: Record<IngredientKey, number>,
-  { raiseCapacity = false }: { raiseCapacity?: boolean } = {}
-) {
+/**
+ * Live demand per production day, for feasibility checks. Only orders that hold
+ * a frozen snapshot contribute — On Hold orders were never promised any stock.
+ */
+async function readDemand(tx: Tx) {
+  const [orders, variants] = await Promise.all([
+    tx.order.findMany({ include: { items: true } }),
+    tx.productVariant.findMany(),
+  ])
+  const variantsById = Object.fromEntries(
+    variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
+  )
+  return demandByProductionDay(
+    orders.map((order) => ({
+      collectionDate: order.collectionDate,
+      productId: order.items[0]?.variantId ?? "",
+      status: order.status as OrderStatus,
+      consumedIngredients: parseConsumed(order.consumedIngredients),
+    })),
+    variantsById
+  )
+}
+
+/**
+ * Writes on-hand back. Under the ledger this has exactly one caller — restocking.
+ * Scheduling and cancelling no longer move stock at all: they add and remove
+ * demand against a production day, and the projection does the rest.
+ */
+async function writeOnHand(tx: Tx, before: StockRecord, after: StockRecord) {
   const ingredients = await tx.ingredient.findMany()
   for (const ingredient of ingredients) {
     const key = ingredient.key as IngredientKey
     if (before[key] === after[key]) continue
-    const delta = after[key] - before[key]
     await tx.stockLevel.update({
       where: { ingredientId: ingredient.id },
-      data: {
-        available: after[key],
-        // A restock genuinely adds stock to the pool, so it lifts capacity too.
-        // Cancelling an order returns stock that was already counted in capacity,
-        // so capacity must NOT move there or committed would drift.
-        ...(raiseCapacity && delta > 0 ? { capacity: { increment: delta } } : {}),
-      },
+      data: { onHand: after[key] },
     })
   }
 }
@@ -209,8 +229,11 @@ export async function createOrder(
     const productionDate = productionDateFor(collectionDate, variant.leadTimeDays)
 
     const needed = calculateIngredientsNeeded(variant, quantity)
-    const stock = await readStock(tx)
-    const shortages = findShortages(needed, stock)
+    // Feasibility is now a question about the whole schedule, not about today:
+    // this demand lands on its production day and must not push any day negative.
+    const onHand = await readOnHand(tx)
+    const demand = await readDemand(tx)
+    const shortages = shortagesAfterAdding(onHand, demand, needed, productionDate)
 
     if (shortages.length === 0) {
       const assignee = await pickStaff(tx, productionDate)
@@ -221,7 +244,8 @@ export async function createOrder(
         }
       }
 
-      await writeStock(tx, stock, deductStock(stock, needed))
+      // No stock write: the order's snapshot below IS the demand, and the
+      // projection reads it from there.
       await tx.staff.update({
         where: { id: assignee.id },
         data: { orderCount: { increment: 1 } },
@@ -279,8 +303,10 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
     }
 
     const needed = calculateIngredientsNeeded(variant, line!.quantity)
-    const stock = await readStock(tx)
-    const shortages = findShortages(needed, stock)
+    const onHand = await readOnHand(tx)
+    const demand = await readDemand(tx)
+    const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
+    const shortages = shortagesAfterAdding(onHand, demand, needed, productionDate)
 
     if (shortages.length > 0) {
       await tx.order.update({
@@ -297,7 +323,6 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
     // was legal when the order was taken, and an order going On Hold on stock is
     // not a reason to also refuse the customer's agreed day. It does assign
     // against that order's production day, same as a fresh one.
-    const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
     const assignee = await pickStaff(tx, productionDate)
     if (!assignee) {
       return {
@@ -306,7 +331,6 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
       }
     }
 
-    await writeStock(tx, stock, deductStock(stock, needed))
     await tx.staff.update({ where: { id: assignee.id }, data: { orderCount: { increment: 1 } } })
     await tx.order.update({
       where: { id: orderId },
@@ -370,13 +394,13 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
       return { message: "Order can't be cancelled.", tone: "error" as const }
     }
 
+    // Nothing to refund: under the dated ledger scheduling never deducted stock.
+    // Cancelling drops the order out of the live set, which removes its demand
+    // from every projection by itself. The consumedIngredients snapshot is left
+    // exactly as written — it is still the record of what this order was for,
+    // and Order Detail still shows it.
     const consumed = JSON.parse(order.consumedIngredients) as IngredientAmounts
     const hadConsumedStock = Object.keys(consumed).length > 0
-    if (hadConsumedStock) {
-      const stock = await readStock(tx)
-      // Refund the frozen snapshot, never a recomputation from the live recipe.
-      await writeStock(tx, stock, restockIngredients(stock, consumed))
-    }
 
     // Releasing the assignment decrements the workload counter so round-robin
     // reflects current load; the row itself stays for the audit trail.
@@ -399,7 +423,9 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
     })
 
     return {
-      message: hadConsumedStock ? "Order cancelled — ingredients restocked" : "Order cancelled",
+      message: hadConsumedStock
+        ? "Order cancelled — its ingredients are free again"
+        : "Order cancelled",
       tone: "success" as const,
     }
   })
@@ -416,9 +442,10 @@ export async function restockIngredient(
     const ingredient = await tx.ingredient.findUnique({ where: { key: ingredientKey } })
     if (!ingredient) return { message: "Unknown ingredient.", tone: "error" as const }
 
-    const stock = await readStock(tx)
+    // The only place on-hand moves under the ledger: stock has physically arrived.
+    const onHand = await readOnHand(tx)
     const key = ingredient.key as IngredientKey
-    await writeStock(tx, stock, restockIngredients(stock, { [key]: amount }), { raiseCapacity: true })
+    await writeOnHand(tx, onHand, restockIngredients(onHand, { [key]: amount }))
     await tx.restockEntry.create({ data: { ingredientId: ingredient.id, amount } })
 
     return {

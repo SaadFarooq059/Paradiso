@@ -17,45 +17,12 @@ export function calculateIngredientsNeeded(
 }
 
 /**
- * Compares required ingredient amounts against currently available stock
- * (which already reflects deductions from every previously scheduled order).
- * Returns the list of ingredients that are short, and by how much.
- */
-export function findShortages(
-  needed: IngredientAmounts,
-  available: Record<IngredientKey, number>
-): ShortageReason[] {
-  const shortages: ShortageReason[] = []
-  for (const key of INGREDIENT_ORDER) {
-    const amount = needed[key]
-    if (!amount) continue
-    const remaining = available[key] ?? 0
-    if (amount > remaining) {
-      shortages.push({ ingredient: key, shortBy: amount - remaining })
-    }
-  }
-  return shortages
-}
-
-/** Deducts the given ingredient amounts from the available stock record (returns a new record). */
-export function deductStock(
-  available: Record<IngredientKey, number>,
-  needed: IngredientAmounts
-): Record<IngredientKey, number> {
-  const next = { ...available }
-  for (const key of INGREDIENT_ORDER) {
-    const amount = needed[key]
-    if (amount) {
-      next[key] = (next[key] ?? 0) - amount
-    }
-  }
-  return next
-}
-
-/**
- * Adds the given ingredient amounts back to the available stock record (returns a new record).
- * The inverse of deductStock — used for manual restocks and for refunding a cancelled order's
- * frozen consumedIngredients snapshot.
+ * Adds ingredient amounts into a stock record (returns a new record).
+ *
+ * Only restocking calls this now. Its former partner deductStock, and
+ * findShortages beside it, went when stock became a dated ledger: scheduling no
+ * longer subtracts from a running total, and "is there enough?" is answered per
+ * production day by lib/stock-projection.ts instead.
  */
 export function restockIngredients(
   available: Record<IngredientKey, number>,
