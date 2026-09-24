@@ -33,7 +33,19 @@ async function submitOrder(page: Page, productName: string, quantity: number) {
   const dataDay = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`
   await page.locator(`[data-day="${dataDay}"]`).click()
 
-  await page.getByRole("button", { name: "Schedule Order" }).click()
+  // Scheduling is a server round-trip now, and on success the dashboard jumps to
+  // the new order's detail view. Both have to be awaited: if the next click in the
+  // test lands before the mutation resolves, the late state update drags the app
+  // into Order Detail and whatever screen the test asked for isn't on screen.
+  // This passed warm and failed cold, which is exactly the shape of that race.
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/orders") && response.request().method() === "POST"
+    ),
+    page.getByRole("button", { name: "Schedule Order" }).click(),
+  ])
+  await expect(page.getByRole("heading", { name: "Order Detail" })).toBeVisible()
 }
 
 test("order sequence: stock deduction, round-robin staff, and on-hold shortage", async ({ page }) => {

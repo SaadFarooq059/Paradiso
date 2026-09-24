@@ -84,6 +84,9 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.3(@types/react@19.2.14)
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       playwright:
         specifier: 1.62.1
         version: 1.62.1
