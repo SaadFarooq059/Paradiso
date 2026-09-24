@@ -14,6 +14,28 @@ export interface ProductVariant {
   description: string
   servings: string
   requires: IngredientAmounts
+  /**
+   * Days between starting production and collection. The production date is
+   * derived as collectionDate - leadTimeDays rather than stored, so editing a
+   * recipe's lead time re-plans orders that have not been made yet.
+   */
+  leadTimeDays: number
+}
+
+/** JavaScript getDay() numbering: 0 = Sunday ... 6 = Saturday. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+/**
+ * The shop's calendar rules. Stored in the database, not hardcoded — the client
+ * has said these will change, and changing them should not need a deploy.
+ */
+export interface CalendarSettings {
+  /** Weekdays on which no order may be collected. */
+  blockedWeekdays: Weekday[]
+  /** Earliest collection time of day, "HH:mm" in 24-hour form. */
+  earliestCollectionTime: string
+  /** Ceiling on orders sharing one production day. */
+  maxOrdersPerProductionDay: number
 }
 
 export type StaffName = string

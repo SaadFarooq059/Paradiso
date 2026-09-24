@@ -23,15 +23,46 @@ async function signIn(page: Page) {
   await page.waitForURL("/")
 }
 
+/**
+ * A collection date every seeded product can actually be made for.
+ *
+ * Lead times mean "today" is no longer selectable: Suprema needs 4 days, so a
+ * date inside that window is refused by the picker and by the server. One week
+ * out clears the longest seeded lead time; Mondays are skipped because the shop
+ * does not do Monday collections. All three orders share this date so the stock
+ * sequence below is unchanged — they still draw on one pool.
+ */
+function collectionDate(): Date {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() + 7)
+  if (date.getDay() === 1) date.setDate(date.getDate() + 1)
+  return date
+}
+
+/** Matches calendar.tsx's data-day, which is pinned to en-GB (dd/mm/yyyy). */
+function dayAttribute(date: Date): string {
+  return date.toLocaleDateString("en-GB")
+}
+
+async function pickCollectionDate(page: Page, date: Date) {
+  await page.getByRole("button", { name: "Collection date" }).click()
+  // The picker opens on the current month; step forward if the target is not in it.
+  const today = new Date()
+  const monthsAhead =
+    (date.getFullYear() - today.getFullYear()) * 12 + (date.getMonth() - today.getMonth())
+  for (let step = 0; step < monthsAhead; step++) {
+    await page.getByRole("button", { name: /next month/i }).click()
+  }
+  await page.locator(`[data-day="${dayAttribute(date)}"]`).click()
+}
+
 async function submitOrder(page: Page, productName: string, quantity: number) {
   await page.getByRole("radio", { name: new RegExp(`^${productName}`) }).click()
 
   await page.locator('input[type="number"]').fill(String(quantity))
 
-  await page.getByRole("button", { name: "Collection date" }).click()
-  const today = new Date()
-  const dataDay = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`
-  await page.locator(`[data-day="${dataDay}"]`).click()
+  await pickCollectionDate(page, collectionDate())
 
   // Scheduling is a server round-trip now, and on success the dashboard jumps to
   // the new order's detail view. Both have to be awaited: if the next click in the

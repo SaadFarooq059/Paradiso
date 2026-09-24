@@ -5,9 +5,22 @@ import {
   findShortages,
   restockIngredients,
 } from "@/lib/order-engine"
-import { loadDashboardState } from "@/lib/server/state"
+import { loadDashboardState, readCalendarSettings } from "@/lib/server/state"
+import {
+  applyEarliestCollectionTime,
+  collectionDateUnavailableReason,
+  dayKey,
+  productionDateFor,
+  type UnavailableReason,
+} from "@/lib/production-schedule"
 import type { DashboardState } from "@/lib/server/serialize"
-import type { IngredientAmounts, IngredientKey, OrderStatus, ProductVariant } from "@/lib/types"
+import type {
+  IngredientAmounts,
+  IngredientKey,
+  Order,
+  OrderStatus,
+  ProductVariant,
+} from "@/lib/types"
 
 /**
  * Server-side order scheduling. The decision rules are unchanged from the
@@ -72,20 +85,90 @@ async function readVariant(tx: Tx, variantId: string): Promise<ProductVariant | 
     requires: Object.fromEntries(
       variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerUnit])
     ),
+    leadTimeDays: variant.leadTimeDays,
   }
 }
 
 /**
- * Round-robin: the staff member with the fewest orders currently assigned, ties
- * broken by roster position. Identical to the in-memory
- * `[...staff].sort((a, b) => a.orderCount - b.orderCount)[0]`.
+ * Every order in the shape the scheduling rules need, plus the lead times to
+ * derive their production days. Read inside the transaction so a date is
+ * validated against the same rows the write will land among.
  */
-async function pickStaff(tx: Tx) {
+async function readScheduleContext(tx: Tx) {
+  const [orders, variants] = await Promise.all([
+    tx.order.findMany({ include: { items: true } }),
+    tx.productVariant.findMany(),
+  ])
+  const variantsById = Object.fromEntries(
+    variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
+  )
+  const shaped: Pick<Order, "collectionDate" | "productId" | "status">[] = orders.map((order) => ({
+    collectionDate: order.collectionDate,
+    productId: order.items[0]?.variantId ?? "",
+    status: (isKnownStatus(order.status) ? order.status : "On Hold") as OrderStatus,
+  }))
+  return { orders: shaped, variantsById }
+}
+
+function isKnownStatus(value: string): boolean {
+  return CANCELLABLE.includes(value as OrderStatus) || value === "Completed" || value === "Cancelled"
+}
+
+const UNAVAILABLE_MESSAGE: Record<UnavailableReason, string> = {
+  "blocked-weekday": "The shop doesn't do collections that day — pick another date.",
+  "inside-lead-time": "Not enough lead time to make that — pick a later collection date.",
+  "production-day-full": "That day's production is already full — pick another date.",
+}
+
+/**
+ * Round-robin, now keyed to the production day rather than to lifetime totals.
+ *
+ * The question the kitchen actually asks is "who is making things on the day
+ * this gets made", not "who has had the most orders ever" — two orders due the
+ * same day are the ones that compete for a person's time, and their collection
+ * dates may be weeks apart if their lead times differ.
+ *
+ * Ties fall back to the previous behaviour: the staff list is read in
+ * (orderCount, sortOrder, id) order and a strict `<` keeps the first of an equal
+ * set, so when nobody is working that day this picks exactly who it used to.
+ */
+async function pickStaff(tx: Tx, productionDate: Date) {
   const staff = await tx.staff.findMany({
     orderBy: [{ orderCount: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
-    take: 1,
   })
-  return staff[0] ?? null
+  if (staff.length === 0) return null
+
+  const load = await productionDayLoadByStaff(tx, productionDate)
+  let best = staff[0]
+  let bestLoad = load.get(best.id) ?? 0
+  for (const member of staff.slice(1)) {
+    const memberLoad = load.get(member.id) ?? 0
+    if (memberLoad < bestLoad) {
+      best = member
+      bestLoad = memberLoad
+    }
+  }
+  return best
+}
+
+/** How many live orders each staff member already has producing on a given day. */
+async function productionDayLoadByStaff(tx: Tx, productionDate: Date): Promise<Map<string, number>> {
+  const assignments = await tx.productionAssignment.findMany({
+    where: { releasedAt: null },
+    include: { order: { include: { items: { include: { variant: true } } } } },
+  })
+  const target = dayKey(productionDate)
+  const load = new Map<string, number>()
+  for (const assignment of assignments) {
+    const order = assignment.order
+    if (order.status === "Cancelled" || order.status === "On Hold") continue
+    const line = order.items[0]
+    if (!line) continue
+    const producedOn = productionDateFor(order.collectionDate, line.variant.leadTimeDays)
+    if (dayKey(producedOn) !== target) continue
+    load.set(assignment.staffId, (load.get(assignment.staffId) ?? 0) + 1)
+  }
+  return load
 }
 
 export interface MutationResult {
@@ -106,12 +189,31 @@ export async function createOrder(
     const variant = await readVariant(tx, productId)
     if (!variant) return { message: "Unknown product.", tone: "error" as const }
 
+    // The calendar rules are enforced here, not only in the picker. The picker
+    // greys these days out, but it is a convenience — the server is what makes
+    // the rule true, and an order arriving by any other route gets the same answer.
+    const settings = await readCalendarSettings(tx)
+    const { orders: existingOrders, variantsById } = await readScheduleContext(tx)
+    const unavailable = collectionDateUnavailableReason(collectionDate, {
+      variant,
+      settings,
+      orders: existingOrders,
+      variantsById,
+    })
+    if (unavailable) {
+      return { message: UNAVAILABLE_MESSAGE[unavailable], tone: "error" as const }
+    }
+
+    // Stored as a real moment, opening time included, rather than midnight.
+    const collectionAt = applyEarliestCollectionTime(collectionDate, settings.earliestCollectionTime)
+    const productionDate = productionDateFor(collectionDate, variant.leadTimeDays)
+
     const needed = calculateIngredientsNeeded(variant, quantity)
     const stock = await readStock(tx)
     const shortages = findShortages(needed, stock)
 
     if (shortages.length === 0) {
-      const assignee = await pickStaff(tx)
+      const assignee = await pickStaff(tx, productionDate)
       if (!assignee) {
         return {
           message: "Can't schedule — there's no staff to assign. Add staff in Staff Management.",
@@ -127,7 +229,7 @@ export async function createOrder(
 
       const order = await tx.order.create({
         data: {
-          collectionDate,
+          collectionDate: collectionAt,
           status: "Scheduled",
           consumedIngredients: JSON.stringify(needed),
           shortages: "[]",
@@ -145,7 +247,7 @@ export async function createOrder(
 
     const order = await tx.order.create({
       data: {
-        collectionDate,
+        collectionDate: collectionAt,
         status: "On Hold",
         consumedIngredients: "{}",
         shortages: JSON.stringify(shortages),
@@ -191,7 +293,12 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
       return { message: "Still insufficient stock", tone: "warning" as const }
     }
 
-    const assignee = await pickStaff(tx)
+    // Re-checking deliberately does not re-validate the collection date: the date
+    // was legal when the order was taken, and an order going On Hold on stock is
+    // not a reason to also refuse the customer's agreed day. It does assign
+    // against that order's production day, same as a fresh one.
+    const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
+    const assignee = await pickStaff(tx, productionDate)
     if (!assignee) {
       return {
         message: "Can't re-check — there's no staff to assign. Add staff in Staff Management.",

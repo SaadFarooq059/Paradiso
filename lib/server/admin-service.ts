@@ -20,12 +20,14 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         description: variant.description,
         servings: variant.servings,
         sortOrder: (lastVariant?.sortOrder ?? -1) + 1,
+        leadTimeDays: variant.leadTimeDays,
       },
       update: {
         name: variant.name,
         description: variant.description,
         servings: variant.servings,
         archived: false,
+        leadTimeDays: variant.leadTimeDays,
       },
     })
 

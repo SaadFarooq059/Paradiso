@@ -1,6 +1,6 @@
 "use client"
 
-import { format, isSameDay } from "date-fns"
+import { isSameDay } from "date-fns"
 import { ChevronRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { getStaffColor, STATUS_BADGE_CLASS } from "@/lib/mock-data"
+import { formatDateLong, UK_LOCALE } from "@/lib/format-date"
 import type { Order, ProductVariant } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +44,7 @@ export function ProductionCalendarPanel({
         <CardContent>
           <Calendar
             mode="single"
+            locale={UK_LOCALE}
             selected={selectedDate}
             onSelect={(value) => value && onSelectDate(value)}
             modifiers={{ hasOrders: datesWithOrders }}
@@ -53,7 +55,7 @@ export function ProductionCalendarPanel({
 
       <Card>
         <CardHeader>
-          <CardTitle>{format(selectedDate, "PPP")}</CardTitle>
+          <CardTitle>{formatDateLong(selectedDate)}</CardTitle>
           <CardDescription>
             {ordersForDay.length} order{ordersForDay.length === 1 ? "" : "s"} due for collection this day.
           </CardDescription>

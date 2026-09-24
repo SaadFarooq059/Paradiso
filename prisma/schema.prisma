@@ -50,11 +50,37 @@ model ProductVariant {
   /// that the New Order form also used to pick its default selection, and row
   /// order out of a database is arbitrary without an explicit column.
   sortOrder   Int     @default(0)
+  /// Working days needed between starting production and handing the order over.
+  /// productionDate = collectionDate - leadTimeDays, derived on read rather than
+  /// stored, so changing a recipe's lead time re-plans orders that have not been
+  /// made yet. Note this is deliberately NOT frozen per order the way
+  /// consumedIngredients is: that snapshot records what was physically used and
+  /// must never move, whereas a lead time is a forward-looking plan.
+  leadTimeDays Int    @default(2)
 
   recipeItems RecipeItem[]
   orderItems  OrderItem[]
 
   @@map("product_variants")
+}
+
+/// Single-row table of the shop's calendar rules. These are settings rather than
+/// constants because the client has said they will change — blocked days and the
+/// opening time in particular — and changing them must not need a deploy.
+/// Enforced as a singleton by pinning the id to 1.
+model CalendarSettings {
+  id Int @id @default(1)
+  /// JSON array of weekday numbers that cannot be chosen for collection, using
+  /// JavaScript's getDay() convention (0 = Sunday ... 6 = Saturday).
+  /// Seeded as [1] — the shop does not do Monday collections.
+  blockedWeekdays String @default("[1]")
+  /// Earliest time of day an order can be collected, as "HH:mm" in 24-hour form.
+  earliestCollectionTime String @default("10:30")
+  /// Ceiling on how many orders may share one production day. A future
+  /// constraint rather than a current one, so it is seeded deliberately high.
+  maxOrdersPerProductionDay Int @default(20)
+
+  @@map("calendar_settings")
 }
 
 /// One line of a product's recipe: how much of one ingredient a single unit needs.

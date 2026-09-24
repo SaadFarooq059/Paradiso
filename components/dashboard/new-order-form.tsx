@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useId, useState } from "react"
-import { format } from "date-fns"
+import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import { CalendarIcon, Send } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -14,15 +13,27 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
-import type { ProductVariant } from "@/lib/types"
+import { formatDateLong, UK_LOCALE } from "@/lib/format-date"
+import { isCollectionDateSelectable } from "@/lib/production-schedule"
+import type { CalendarSettings, Order, ProductVariant } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface NewOrderFormProps {
   variants: ProductVariant[]
+  /** Existing orders — needed to know which production days are already full. */
+  orders: Order[]
+  variantsById: Record<string, ProductVariant>
+  settings: CalendarSettings
   onSubmit: (productId: string, quantity: number, collectionDate: Date) => void
 }
 
-export function NewOrderForm({ variants, onSubmit }: NewOrderFormProps) {
+export function NewOrderForm({
+  variants,
+  orders,
+  variantsById,
+  settings,
+  onSubmit,
+}: NewOrderFormProps) {
   const quantityId = useId()
   const [productId, setProductId] = useState<string>(variants[0]?.id ?? "")
   const [quantity, setQuantity] = useState("1")
@@ -38,8 +49,33 @@ export function NewOrderForm({ variants, onSubmit }: NewOrderFormProps) {
   }, [variants, productId])
 
   const parsedQuantity = Number.parseInt(quantity, 10)
-  const isValid = productId && Number.isFinite(parsedQuantity) && parsedQuantity > 0 && !!date
   const selectedVariant = variants.find((variant) => variant.id === productId)
+
+  // The same rules the server enforces, applied here so unavailable days are
+  // visibly greyed out rather than accepted and then rejected.
+  const availability = useMemo(
+    () =>
+      selectedVariant
+        ? { variant: selectedVariant, settings, orders, variantsById }
+        : null,
+    [selectedVariant, settings, orders, variantsById]
+  )
+
+  const isDayUnavailable = useCallback(
+    (day: Date) => (availability ? !isCollectionDateSelectable(day, availability) : true),
+    [availability]
+  )
+
+  // Lead times differ per product, so a date that was fine for Grande can be
+  // inside Suprema's lead time. Switching product must not silently leave an
+  // illegal date selected.
+  useEffect(() => {
+    if (date && availability && !isCollectionDateSelectable(date, availability)) {
+      setDate(undefined)
+    }
+  }, [date, availability])
+
+  const isValid = productId && Number.isFinite(parsedQuantity) && parsedQuantity > 0 && !!date
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -147,22 +183,30 @@ export function NewOrderForm({ variants, onSubmit }: NewOrderFormProps) {
                         className="w-full justify-start font-normal"
                       >
                         <CalendarIcon data-icon="inline-start" />
-                        {date ? format(date, "PPP") : "Pick a collection date"}
+                        {date ? formatDateLong(date) : "Pick a collection date"}
                       </Button>
                     }
                   />
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
+                      locale={UK_LOCALE}
                       selected={date}
                       onSelect={(value) => {
                         setDate(value)
                         setCalendarOpen(false)
                       }}
-                      disabled={{ before: new Date() }}
+                      disabled={isDayUnavailable}
                     />
                   </PopoverContent>
                 </Popover>
+                {selectedVariant && (
+                  <FieldDescription>
+                    {selectedVariant.name} needs {selectedVariant.leadTimeDays}{" "}
+                    {selectedVariant.leadTimeDays === 1 ? "day" : "days"} in production, so earlier
+                    dates are greyed out. Collection from {settings.earliestCollectionTime}.
+                  </FieldDescription>
+                )}
               </Field>
             </div>
           </FieldGroup>

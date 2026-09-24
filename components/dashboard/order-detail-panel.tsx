@@ -1,6 +1,6 @@
 "use client"
 
-import { format, formatDistanceToNow } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 import { ArrowLeft, CalendarRange, CheckCircle2, CookingPot, PackageCheck, RotateCcw, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ProductArt } from "@/components/dashboard/product-art"
 import { getStaffColor, INGREDIENT_INFO, INGREDIENT_ORDER, STATUS_BADGE_CLASS } from "@/lib/mock-data"
 import { formatShortageLabel } from "@/lib/order-engine"
+import { formatDateLong, formatDateTime } from "@/lib/format-date"
 import type { Order, ProductVariant } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -73,7 +74,7 @@ export function OrderDetailPanel({
             <div className="flex flex-col items-start gap-0.5">
               <span className="text-xs text-muted-foreground">Collection date</span>
               <span className="text-sm font-medium text-foreground">
-                {format(order.collectionDate, "PPP")}
+                {formatDateLong(order.collectionDate)}
               </span>
               <button
                 type="button"
@@ -164,7 +165,7 @@ export function OrderDetailPanel({
                   <div className="flex flex-col">
                     <span className="font-medium text-foreground">{event.status}</span>
                     <span className="text-xs text-muted-foreground">
-                      {format(event.at, "PPP p")}
+                      {formatDateTime(event.at)}
                       {event.note ? ` — ${event.note}` : ""}
                     </span>
                   </div>

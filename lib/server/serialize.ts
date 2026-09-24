@@ -1,4 +1,5 @@
 import type {
+  CalendarSettings,
   IngredientAmounts,
   IngredientKey,
   Order,
@@ -32,6 +33,12 @@ export interface DashboardState {
   staff: StaffMember[]
   orders: SerializedOrder[]
   restockLog: { id: string; ingredient: IngredientKey; amount: number; at: number }[]
+  /**
+   * The shop's calendar rules. Shipped with the rest of the state so the New
+   * Order picker can apply exactly the rules the server enforces, without a
+   * second round trip every time the selected product changes.
+   */
+  calendarSettings: CalendarSettings
 }
 
 /** Reads back the JSON-encoded ingredient snapshot stored on an order. */

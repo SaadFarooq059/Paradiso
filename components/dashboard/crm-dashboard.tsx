@@ -86,7 +86,7 @@ export function CrmDashboard() {
   // and so the day stays put when you drill into an order and come back.
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
-  const { orders, stock, capacity, staff, variants, restockLog } = data
+  const { orders, stock, capacity, staff, variants, restockLog, calendarSettings } = data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
   const isAdmin = currentUser?.role === "admin"
@@ -208,7 +208,15 @@ export function CrmDashboard() {
             />
           ) : (
             <>
-              {view === "new-order" && <NewOrderForm variants={variants} onSubmit={handleNewOrder} />}
+              {view === "new-order" && (
+                <NewOrderForm
+                  variants={variants}
+                  orders={orders}
+                  variantsById={variantsById}
+                  settings={calendarSettings}
+                  onSubmit={handleNewOrder}
+                />
+              )}
               {view === "orders" && (
                 <OrdersTable orders={orders} variantsById={variantsById} onSelectOrder={setSelectedOrderId} />
               )}

@@ -1,6 +1,5 @@
 "use client"
 
-import { format } from "date-fns"
 import { AlertTriangle, ChevronRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +16,7 @@ import {
 import { ProductArt } from "@/components/dashboard/product-art"
 import { getStaffColor, INGREDIENT_INFO, STATUS_BADGE_CLASS } from "@/lib/mock-data"
 import { formatShortageLabel } from "@/lib/order-engine"
+import { formatDateLong } from "@/lib/format-date"
 import type { Order, ProductVariant } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -79,7 +79,7 @@ export function OrdersTable({ orders, variantsById, onSelectOrder }: OrdersTable
                       </div>
                     </TableCell>
                     <TableCell className="font-mono tabular-nums">{order.quantity}</TableCell>
-                    <TableCell>{format(order.collectionDate, "PPP")}</TableCell>
+                    <TableCell>{formatDateLong(order.collectionDate)}</TableCell>
                     <TableCell>
                       {order.assignedStaff ? (
                         <div className="flex items-center gap-2">

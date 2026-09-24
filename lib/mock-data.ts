@@ -1,4 +1,5 @@
 import type {
+  CalendarSettings,
   IngredientInfo,
   IngredientKey,
   OrderStatus,
@@ -29,6 +30,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "A single elegant portion, dusted with cocoa.",
     servings: "Serves 1",
     requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
+    leadTimeDays: 2,
   },
   {
     id: "grande-classico",
@@ -36,6 +38,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "Layered for sharing — our most popular size.",
     servings: "Serves 4–6",
     requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
+    leadTimeDays: 2,
   },
   {
     id: "suprema-classico",
@@ -43,6 +46,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "Our signature showstopper, finished with coffee beans and mint.",
     servings: "Serves 8–10",
     requires: { eggs: 6, mascarpone: 500, savoiardi: 350, coffee: 150, butter: 100 },
+    leadTimeDays: 4,
   },
 ]
 
@@ -58,6 +62,20 @@ export const INITIAL_STAFF: StaffMember[] = [
   { id: "aisha", name: "Aisha", role: "admin", orderCount: 0 },
   { id: "tom", name: "Tom", role: "staff", orderCount: 0 },
 ]
+
+/**
+ * Seed calendar rules. These live in the database as editable settings — this
+ * constant only supplies the starting values, exactly as INITIAL_STOCK does for
+ * stock, so a fresh database and a demo reset agree.
+ */
+export const INITIAL_CALENDAR_SETTINGS: CalendarSettings = {
+  // 1 = Monday. The shop does not do Monday collections.
+  blockedWeekdays: [1],
+  earliestCollectionTime: "10:30",
+  // Deliberately generous: a ceiling the shop is nowhere near today, present so
+  // the rule exists and can be tightened without a schema change.
+  maxOrdersPerProductionDay: 20,
+}
 
 // Staff are now managed at runtime (added/removed/renamed via Staff Management), so
 // colors can't be a fixed lookup keyed by name anymore — derive a stable color from

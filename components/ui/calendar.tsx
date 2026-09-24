@@ -7,6 +7,7 @@ import {
   type DayButton,
   type Locale,
 } from "react-day-picker"
+import { enGB } from "date-fns/locale"
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -18,7 +19,11 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = "label",
   buttonVariant = "ghost",
-  locale,
+  // UK by default: month and weekday names in en-GB, and the week starting on
+  // Monday. Previously this was undefined, which meant react-day-picker fell
+  // back to the machine's locale and the calendar rendered differently
+  // depending on who opened it.
+  locale = enGB,
   formatters,
   components,
   ...props
@@ -198,7 +203,11 @@ function CalendarDayButton({
     <Button
       variant="ghost"
       size="icon"
-      data-day={day.date.toLocaleDateString(locale?.code)}
+      // Pinned to en-GB rather than locale?.code, which was undefined and so
+      // resolved to the machine's locale — the same day rendered 9/24/2026 on a
+      // US-configured machine and 24/09/2026 elsewhere, and the Playwright
+      // selector that matches on this attribute only worked on the former.
+      data-day={day.date.toLocaleDateString("en-GB")}
       data-selected-single={
         modifiers.selected &&
         !modifiers.range_start &&

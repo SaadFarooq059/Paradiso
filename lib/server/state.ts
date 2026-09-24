@@ -1,5 +1,13 @@
 import { prisma } from "@/lib/prisma"
-import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
+import { parseBlockedWeekdays } from "@/lib/production-schedule"
+import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
+import type {
+  CalendarSettings,
+  IngredientKey,
+  Order,
+  ProductVariant,
+  StaffMember,
+} from "@/lib/types"
 import {
   type DashboardState,
   isOrderStatus,
@@ -9,7 +17,25 @@ import {
 } from "@/lib/server/serialize"
 
 /** Any Prisma client or interactive-transaction client. */
-export type Db = Pick<typeof prisma, "ingredient" | "productVariant" | "staff" | "order" | "restockEntry">
+export type Db = Pick<
+  typeof prisma,
+  "ingredient" | "productVariant" | "staff" | "order" | "restockEntry" | "calendarSettings"
+>
+
+/**
+ * Reads the singleton calendar settings row, falling back to the seed values if
+ * it is somehow missing — the app must still render rather than 500 on a
+ * half-seeded database.
+ */
+export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSettings> {
+  const row = await db.calendarSettings.findUnique({ where: { id: 1 } })
+  if (!row) return INITIAL_CALENDAR_SETTINGS
+  return {
+    blockedWeekdays: parseBlockedWeekdays(row.blockedWeekdays),
+    earliestCollectionTime: row.earliestCollectionTime,
+    maxOrdersPerProductionDay: row.maxOrdersPerProductionDay,
+  }
+}
 
 /**
  * Loads the whole dashboard in one pass and shapes it exactly like the state
@@ -18,7 +44,7 @@ export type Db = Pick<typeof prisma, "ingredient" | "productVariant" | "staff" |
  * they could never disagree; served piecemeal they could.
  */
 export async function loadDashboardState(db: Db = prisma): Promise<DashboardState> {
-  const [ingredients, variants, staff, orders, restocks] = await Promise.all([
+  const [ingredients, variants, staff, orders, restocks, calendarSettings] = await Promise.all([
     db.ingredient.findMany({ orderBy: { sortOrder: "asc" }, include: { stockLevel: true } }),
     db.productVariant.findMany({
       where: { archived: false },
@@ -36,6 +62,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       },
     }),
     db.restockEntry.findMany({ orderBy: { at: "desc" }, include: { ingredient: true } }),
+    readCalendarSettings(db),
   ])
 
   const stock = {} as Record<IngredientKey, number>
@@ -54,6 +81,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     requires: Object.fromEntries(
       variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerUnit])
     ),
+    leadTimeDays: variant.leadTimeDays,
   }))
 
   const serializedStaff: StaffMember[] = staff.map((member) => ({
@@ -103,6 +131,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       amount: entry.amount,
       at: entry.at.getTime(),
     })),
+    calendarSettings,
   }
 }
 

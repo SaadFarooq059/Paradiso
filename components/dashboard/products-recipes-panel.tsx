@@ -6,7 +6,7 @@ import { Pencil, Plus, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
@@ -24,6 +24,7 @@ type FormState = {
   name: string
   description: string
   servings: string
+  leadTimeDays: string
   amounts: Record<IngredientKey, string>
 }
 
@@ -33,7 +34,7 @@ function emptyAmounts(): Record<IngredientKey, string> {
 
 function toFormState(variant: ProductVariant | null): FormState {
   if (!variant) {
-    return { id: "", name: "", description: "", servings: "", amounts: emptyAmounts() }
+    return { id: "", name: "", description: "", servings: "", leadTimeDays: "2", amounts: emptyAmounts() }
   }
   const amounts = emptyAmounts()
   for (const key of INGREDIENT_ORDER) {
@@ -45,6 +46,7 @@ function toFormState(variant: ProductVariant | null): FormState {
     name: variant.name,
     description: variant.description,
     servings: variant.servings,
+    leadTimeDays: String(variant.leadTimeDays),
     amounts,
   }
 }
@@ -70,6 +72,11 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       }
     }
 
+    // A lead time of 0 is meaningful (same-day), so only reject non-numbers and
+    // negatives rather than falsy values.
+    const parsedLeadTime = Number.parseInt(editing.leadTimeDays, 10)
+    if (!Number.isFinite(parsedLeadTime) || parsedLeadTime < 0) return
+
     const requires: ProductVariant["requires"] = {}
     for (const key of INGREDIENT_ORDER) {
       const parsed = Number.parseFloat(editing.amounts[key])
@@ -82,6 +89,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       description: editing.description.trim(),
       servings: editing.servings.trim(),
       requires,
+      leadTimeDays: parsedLeadTime,
     })
     setEditing(null)
   }
@@ -125,14 +133,31 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   />
                 </Field>
               </div>
-              <Field>
-                <FieldLabel htmlFor="variant-description">Description</FieldLabel>
-                <Input
-                  id="variant-description"
-                  value={editing.description}
-                  onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-                />
-              </Field>
+              <div className="grid gap-4 @sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="variant-description">Description</FieldLabel>
+                  <Input
+                    id="variant-description"
+                    value={editing.description}
+                    onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="variant-lead-time">Lead time (days)</FieldLabel>
+                  <Input
+                    id="variant-lead-time"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={editing.leadTimeDays}
+                    onChange={(e) => setEditing({ ...editing, leadTimeDays: e.target.value })}
+                  />
+                  <FieldDescription>
+                    How long before collection this has to go into production. Collection dates
+                    inside this window can&apos;t be chosen.
+                  </FieldDescription>
+                </Field>
+              </div>
               <Field>
                 <FieldLabel>Recipe (per unit)</FieldLabel>
                 <div className="grid gap-3 @sm:grid-cols-3">

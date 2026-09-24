@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import type { DashboardState, SerializedOrder } from "@/lib/server/serialize"
-import type { IngredientKey, Order, ProductVariant, RestockEntry, StaffMember } from "@/lib/types"
+import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
+import type {
+  CalendarSettings,
+  IngredientKey,
+  Order,
+  ProductVariant,
+  RestockEntry,
+  StaffMember,
+} from "@/lib/types"
 
 /** Client-side view of the dashboard: identical to the old useState shape. */
 export interface DashboardData {
@@ -15,6 +23,7 @@ export interface DashboardData {
   staff: StaffMember[]
   orders: Order[]
   restockLog: RestockEntry[]
+  calendarSettings: CalendarSettings
 }
 
 const EMPTY: DashboardData = {
@@ -25,6 +34,8 @@ const EMPTY: DashboardData = {
   staff: [],
   orders: [],
   restockLog: [],
+  // Only ever on screen for the moment before the first fetch lands.
+  calendarSettings: INITIAL_CALENDAR_SETTINGS,
 }
 
 function reviveOrder(order: SerializedOrder): Order {

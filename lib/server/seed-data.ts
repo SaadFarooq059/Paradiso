@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import {
   INGREDIENT_INFO,
   INGREDIENT_ORDER,
+  INITIAL_CALENDAR_SETTINGS,
   INITIAL_STAFF,
   INITIAL_STOCK,
   PRODUCT_VARIANTS,
@@ -28,6 +29,7 @@ export async function seedDatabase() {
     await tx.ingredient.deleteMany()
     await tx.productVariant.deleteMany()
     await tx.staff.deleteMany()
+    await tx.calendarSettings.deleteMany()
 
     for (const [index, key] of INGREDIENT_ORDER.entries()) {
       const info = INGREDIENT_INFO[key]
@@ -56,6 +58,7 @@ export async function seedDatabase() {
           description: variant.description,
           servings: variant.servings,
           sortOrder: index,
+          leadTimeDays: variant.leadTimeDays,
           recipeItems: {
             create: INGREDIENT_ORDER.filter((key) => variant.requires[key]).map((key) => ({
               ingredientId: ingredientIdByKey.get(key)!,
@@ -77,6 +80,17 @@ export async function seedDatabase() {
         },
       })
     }
+
+    // Pinned id: calendar_settings is a singleton, and every reader looks it up
+    // by id 1 rather than taking "the first row".
+    await tx.calendarSettings.create({
+      data: {
+        id: 1,
+        blockedWeekdays: JSON.stringify(INITIAL_CALENDAR_SETTINGS.blockedWeekdays),
+        earliestCollectionTime: INITIAL_CALENDAR_SETTINGS.earliestCollectionTime,
+        maxOrdersPerProductionDay: INITIAL_CALENDAR_SETTINGS.maxOrdersPerProductionDay,
+      },
+    })
   })
 
   return {
@@ -84,5 +98,6 @@ export async function seedDatabase() {
     variants: await prisma.productVariant.count(),
     recipeItems: await prisma.recipeItem.count(),
     staff: await prisma.staff.count(),
+    calendarSettings: await prisma.calendarSettings.count(),
   }
 }
