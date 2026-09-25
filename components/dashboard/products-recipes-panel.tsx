@@ -25,6 +25,7 @@ type FormState = {
   description: string
   servings: string
   leadTimeDays: string
+  unitsPerBatch: string
   amounts: Record<IngredientKey, string>
 }
 
@@ -34,7 +35,15 @@ function emptyAmounts(): Record<IngredientKey, string> {
 
 function toFormState(variant: ProductVariant | null): FormState {
   if (!variant) {
-    return { id: "", name: "", description: "", servings: "", leadTimeDays: "2", amounts: emptyAmounts() }
+    return {
+      id: "",
+      name: "",
+      description: "",
+      servings: "",
+      leadTimeDays: "2",
+      unitsPerBatch: "1",
+      amounts: emptyAmounts(),
+    }
   }
   const amounts = emptyAmounts()
   for (const key of INGREDIENT_ORDER) {
@@ -47,6 +56,7 @@ function toFormState(variant: ProductVariant | null): FormState {
     description: variant.description,
     servings: variant.servings,
     leadTimeDays: String(variant.leadTimeDays),
+    unitsPerBatch: String(variant.unitsPerBatch),
     amounts,
   }
 }
@@ -77,6 +87,10 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
     const parsedLeadTime = Number.parseInt(editing.leadTimeDays, 10)
     if (!Number.isFinite(parsedLeadTime) || parsedLeadTime < 0) return
 
+    // A batch has to yield at least one unit or demand could never be satisfied.
+    const parsedYield = Number.parseInt(editing.unitsPerBatch, 10)
+    if (!Number.isFinite(parsedYield) || parsedYield < 1) return
+
     const requires: ProductVariant["requires"] = {}
     for (const key of INGREDIENT_ORDER) {
       const parsed = Number.parseFloat(editing.amounts[key])
@@ -90,6 +104,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       servings: editing.servings.trim(),
       requires,
       leadTimeDays: parsedLeadTime,
+      unitsPerBatch: parsedYield,
     })
     setEditing(null)
   }
@@ -143,6 +158,21 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   />
                 </Field>
                 <Field>
+                  <FieldLabel htmlFor="variant-units-per-batch">Units per batch</FieldLabel>
+                  <Input
+                    id="variant-units-per-batch"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={editing.unitsPerBatch}
+                    onChange={(e) => setEditing({ ...editing, unitsPerBatch: e.target.value })}
+                  />
+                  <FieldDescription>
+                    How many finished cakes one batch makes. Orders for the same day are pooled and
+                    rounded up to whole batches.
+                  </FieldDescription>
+                </Field>
+                <Field>
                   <FieldLabel htmlFor="variant-lead-time">Lead time (days)</FieldLabel>
                   <Input
                     id="variant-lead-time"
@@ -159,7 +189,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                 </Field>
               </div>
               <Field>
-                <FieldLabel>Recipe (per unit)</FieldLabel>
+                <FieldLabel>Recipe (per batch)</FieldLabel>
                 <div className="grid gap-3 @sm:grid-cols-3">
                   {INGREDIENT_ORDER.map((key) => (
                     <div key={key} className="flex flex-col gap-1">

@@ -1,17 +1,9 @@
 import { test, expect, type Page } from "@playwright/test"
 
+import { collectionDate, dayAttribute, resetDemoData } from "./support"
+
 function eggsCard(page: Page) {
   return page.locator("div", { hasText: "Eggs" }).filter({ has: page.getByText("available") }).last()
-}
-
-/**
- * Data now persists in SQLite, so this test can no longer rely on a fresh
- * in-memory store per run — it has to reset the database to the seed state
- * itself, or a second run would start with the previous run's orders.
- */
-async function resetDemoData(page: Page) {
-  const response = await page.request.post("/api/reset")
-  expect(response.ok()).toBeTruthy()
 }
 
 async function signIn(page: Page) {
@@ -21,28 +13,6 @@ async function signIn(page: Page) {
   await page.locator("#password").fill("dummy-password")
   await page.getByRole("button", { name: "Sign in" }).click()
   await page.waitForURL("/")
-}
-
-/**
- * A collection date every seeded product can actually be made for.
- *
- * Lead times mean "today" is no longer selectable: Suprema needs 4 days, so a
- * date inside that window is refused by the picker and by the server. One week
- * out clears the longest seeded lead time; Mondays are skipped because the shop
- * does not do Monday collections. All three orders share this date so the stock
- * sequence below is unchanged — they still draw on one pool.
- */
-function collectionDate(): Date {
-  const date = new Date()
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() + 7)
-  if (date.getDay() === 1) date.setDate(date.getDate() + 1)
-  return date
-}
-
-/** Matches calendar.tsx's data-day, which is pinned to en-GB (dd/mm/yyyy). */
-function dayAttribute(date: Date): string {
-  return date.toLocaleDateString("en-GB")
 }
 
 async function pickCollectionDate(page: Page, date: Date) {
@@ -83,7 +53,9 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
   await resetDemoData(page)
   await signIn(page)
 
-  // --- Order 1: Suprema Classico x2 -> needs 12 eggs, stock starts at 20 ---
+  // --- Order 1: Suprema Classico x2 ---
+  // Batching changes this sum. Two Supremas are ONE batch (yield 2), so the draw
+  // is 6 eggs, not 2 x 6. Before batching this order took 12.
   await submitOrder(page, "Suprema Classico", 2)
 
   await page.getByRole("button", { name: "Orders" }).click()
@@ -92,10 +64,11 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
   await expect(firstRow).toContainText("Aisha")
 
   await page.getByRole("button", { name: "Stock Levels" }).click()
-  await expect(eggsCard(page)).toContainText(/8\s*available/)
-  await expect(eggsCard(page)).toContainText(/12\s*committed/)
+  await expect(eggsCard(page)).toContainText(/14\s*available/)
+  await expect(eggsCard(page)).toContainText(/6\s*committed/)
 
-  // --- Order 2: Grande Classico x2 -> needs 8 eggs ---
+  // --- Order 2: Grande Classico x2 ---
+  // One batch again (yield 4), so 4 eggs rather than 2 x 4. Running total 10.
   await page.getByRole("button", { name: "New Order" }).click()
   await submitOrder(page, "Grande Classico", 2)
 
@@ -106,12 +79,16 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
 
   await page.getByRole("button", { name: "Stock Levels" }).click()
   await expect(eggsCard(page)).toContainText(/^Eggs/)
-  await expect(eggsCard(page)).toContainText(/0\s*available/)
-  await expect(eggsCard(page)).toContainText(/20\s*committed/)
+  await expect(eggsCard(page)).toContainText(/10\s*available/)
+  await expect(eggsCard(page)).toContainText(/10\s*committed/)
 
-  // --- Order 3: Mini Classico x1 -> needs 2 eggs, 0 remaining ---
+  // --- Order 3: Suprema Classico x4 -> short ---
+  // A Mini x1 used to exhaust the last eggs and go On Hold. Under batching it
+  // costs one 2-egg batch out of 10 remaining, so it no longer does. Four more
+  // Supremas take that production day from 2 units to 6, i.e. 1 batch to 3, and
+  // the extra 12 eggs are what the pool cannot cover.
   await page.getByRole("button", { name: "New Order" }).click()
-  await submitOrder(page, "Mini Classico", 1)
+  await submitOrder(page, "Suprema Classico", 4)
 
   await page.getByRole("button", { name: "Orders" }).click()
   firstRow = page.locator("table tbody tr").first()
@@ -119,7 +96,8 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
   await expect(firstRow).toContainText("—") // no staff assigned
   await expect(firstRow).toContainText("Short 2 eggs")
 
-  // Stock must NOT have been deducted for the on-hold order
+  // An On Hold order books no production, so the day's batches are untouched.
   await page.getByRole("button", { name: "Stock Levels" }).click()
-  await expect(eggsCard(page)).toContainText(/0\s*available/)
+  await expect(eggsCard(page)).toContainText(/10\s*available/)
+  await expect(eggsCard(page)).toContainText(/10\s*committed/)
 })

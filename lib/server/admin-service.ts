@@ -21,6 +21,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         servings: variant.servings,
         sortOrder: (lastVariant?.sortOrder ?? -1) + 1,
         leadTimeDays: variant.leadTimeDays,
+        unitsPerBatch: variant.unitsPerBatch,
       },
       update: {
         name: variant.name,
@@ -28,6 +29,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         servings: variant.servings,
         archived: false,
         leadTimeDays: variant.leadTimeDays,
+        unitsPerBatch: variant.unitsPerBatch,
       },
     })
 
@@ -36,7 +38,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
       const ingredientId = idByKey.get(key as IngredientKey)
       if (!ingredientId || !amount) continue
       await tx.recipeItem.create({
-        data: { variantId: variant.id, ingredientId, amountPerUnit: amount },
+        data: { variantId: variant.id, ingredientId, amountPerBatch: amount },
       })
     }
   })

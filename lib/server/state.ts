@@ -2,7 +2,9 @@ import { prisma } from "@/lib/prisma"
 import { parseBlockedWeekdays } from "@/lib/production-schedule"
 import {
   demandByProductionDay,
+  productionLinesFrom,
   totalCommitted,
+  type BatchableVariant,
   type StockRecord,
 } from "@/lib/stock-projection"
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
@@ -81,8 +83,9 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     description: variant.description,
     servings: variant.servings,
     requires: Object.fromEntries(
-      variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerUnit])
+      variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerBatch])
     ),
+    unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
   }))
 
@@ -123,14 +126,23 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
   const variantLeadTimes = Object.fromEntries(
     variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
   )
+  const batchable: Record<string, BatchableVariant> = Object.fromEntries(
+    serializedVariants.map((variant) => [
+      variant.id,
+      { requires: variant.requires, unitsPerBatch: variant.unitsPerBatch },
+    ])
+  )
   const demand = demandByProductionDay(
-    serializedOrders.map((order) => ({
-      collectionDate: new Date(order.collectionDate),
-      productId: order.productId,
-      status: order.status,
-      consumedIngredients: order.consumedIngredients,
-    })),
-    variantLeadTimes
+    productionLinesFrom(
+      serializedOrders.map((order) => ({
+        collectionDate: new Date(order.collectionDate),
+        productId: order.productId,
+        status: order.status,
+        quantity: order.quantity,
+      })),
+      variantLeadTimes
+    ),
+    batchable
   )
   const committed = totalCommitted(demand)
   const uncommitted = {} as StockRecord
@@ -153,6 +165,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       date: day.date.toISOString(),
       amounts: day.amounts,
       orderCount: day.orderCount,
+      variants: day.variants,
     })),
     staff: serializedStaff,
     orders: serializedOrders,

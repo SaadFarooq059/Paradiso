@@ -1,28 +1,15 @@
 import { INGREDIENT_ORDER } from "@/lib/mock-data"
-import type { IngredientAmounts, IngredientKey, ProductVariant, ShortageReason } from "@/lib/types"
-
-/** Multiplies a product variant's per-unit ingredient requirements by quantity. */
-export function calculateIngredientsNeeded(
-  variant: ProductVariant,
-  quantity: number
-): IngredientAmounts {
-  const needed: IngredientAmounts = {}
-  for (const key of INGREDIENT_ORDER) {
-    const perUnit = variant.requires[key]
-    if (perUnit) {
-      needed[key] = perUnit * quantity
-    }
-  }
-  return needed
-}
+import type { IngredientAmounts, IngredientKey, ShortageReason } from "@/lib/types"
 
 /**
  * Adds ingredient amounts into a stock record (returns a new record).
  *
- * Only restocking calls this now. Its former partner deductStock, and
- * findShortages beside it, went when stock became a dated ledger: scheduling no
- * longer subtracts from a running total, and "is there enough?" is answered per
- * production day by lib/stock-projection.ts instead.
+ * All that is left of the original engine. deductStock and findShortages went
+ * when stock became a dated ledger; calculateIngredientsNeeded went when recipes
+ * became per-batch, because multiplying a batch recipe by a unit count is no
+ * longer a meaningful quantity. Scheduling arithmetic now lives in
+ * lib/stock-projection.ts, which reasons in whole batches per production day.
+ * Only restocking calls this.
  */
 export function restockIngredients(
   available: Record<IngredientKey, number>,

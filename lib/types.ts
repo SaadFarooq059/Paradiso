@@ -13,7 +13,17 @@ export interface ProductVariant {
   name: string
   description: string
   servings: string
+  /**
+   * Ingredients needed for ONE BATCH, not one unit. The kitchen bakes batches:
+   * one batch makes two 12-inch cakes whether one or two were ordered.
+   */
   requires: IngredientAmounts
+  /**
+   * How many finished units one batch produces. Demand is
+   * ceil(units / unitsPerBatch) x requires — never units x requires.
+   * A value of 1 reproduces the old per-unit behaviour exactly.
+   */
+  unitsPerBatch: number
   /**
    * Days between starting production and collection. The production date is
    * derived as collectionDate - leadTimeDays rather than stored, so editing a

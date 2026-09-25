@@ -144,7 +144,10 @@ export function NewOrderForm({
               </div>
               {selectedVariant && (
                 <>
-                  <FieldDescription>{selectedVariant.description}</FieldDescription>
+                  <FieldDescription>
+                    {selectedVariant.description} One batch makes {selectedVariant.unitsPerBatch}{" "}
+                    {selectedVariant.unitsPerBatch === 1 ? "cake" : "cakes"} and draws:
+                  </FieldDescription>
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {INGREDIENT_ORDER.filter((key) => selectedVariant.requires[key]).map((key) => (
                       <Badge key={key} variant="secondary" className="font-normal">

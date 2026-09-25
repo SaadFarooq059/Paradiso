@@ -23,6 +23,11 @@ export const INGREDIENT_ORDER: IngredientKey[] = [
   "butter",
 ]
 
+/**
+ * Recipes here are per BATCH. The amounts are unchanged from the per-unit era —
+ * only their meaning moved — and unitsPerBatch says how many finished cakes that
+ * batch yields.
+ */
 export const PRODUCT_VARIANTS: ProductVariant[] = [
   {
     id: "mini-classico",
@@ -31,6 +36,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     servings: "Serves 1",
     requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
     leadTimeDays: 2,
+    unitsPerBatch: 8,
   },
   {
     id: "grande-classico",
@@ -39,6 +45,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     servings: "Serves 4–6",
     requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
     leadTimeDays: 2,
+    unitsPerBatch: 4,
   },
   {
     id: "suprema-classico",
@@ -47,6 +54,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     servings: "Serves 8–10",
     requires: { eggs: 6, mascarpone: 500, savoiardi: 350, coffee: 150, butter: 100 },
     leadTimeDays: 4,
+    unitsPerBatch: 2,
   },
 ]
 

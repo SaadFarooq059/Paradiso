@@ -10,6 +10,12 @@ const baseURL = `http://localhost:${port}`
 export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
+  // One SQLite file backs every spec, and each one resets it to the seed state.
+  // Run them in parallel and they clobber each other: a spec reads a committed
+  // figure another spec's orders produced. Serialising is the honest fix while
+  // there is a single shared database.
+  workers: 1,
+  fullyParallel: false,
   webServer: {
     command: `PORT=${port} npm run dev`,
     url: baseURL,

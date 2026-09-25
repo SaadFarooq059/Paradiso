@@ -57,6 +57,12 @@ model ProductVariant {
   /// consumedIngredients is: that snapshot records what was physically used and
   /// must never move, whereas a lead time is a forward-looking plan.
   leadTimeDays Int    @default(2)
+  /// How many finished units one batch produces. The kitchen works in batches,
+  /// not units — one batch makes two 12-inch cakes whether one was ordered or
+  /// two — so ingredient demand is batches x the batch recipe, never units x a
+  /// per-unit recipe. Named unitsPerBatch rather than `yield` because that word
+  /// is awkward to destructure in JS.
+  unitsPerBatch Int   @default(1)
 
   recipeItems RecipeItem[]
   orderItems  OrderItem[]
@@ -83,14 +89,17 @@ model CalendarSettings {
   @@map("calendar_settings")
 }
 
-/// One line of a product's recipe: how much of one ingredient a single unit needs.
+/// One line of a product's recipe: how much of one ingredient ONE BATCH needs.
 /// Together these rows are the `requires` map from ProductVariant in lib/types.ts.
 model RecipeItem {
   id           Int    @id @default(autoincrement())
   variantId    String
   ingredientId Int
-  /// Amount needed per single unit of the product, in the ingredient's unit.
-  amountPerUnit Float
+  /// Amount needed to make one whole batch, in the ingredient's unit. This used
+  /// to be per single unit; the figures did not change, their meaning did. A
+  /// Suprema batch has always drawn 6 eggs — what changed is that the batch now
+  /// yields 2 cakes rather than being assumed to yield exactly the one ordered.
+  amountPerBatch Float
 
   variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   ingredient Ingredient     @relation(fields: [ingredientId], references: [id], onDelete: Cascade)

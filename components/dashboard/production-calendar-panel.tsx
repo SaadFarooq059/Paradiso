@@ -154,6 +154,25 @@ export function ProductionCalendarPanel({
               <p className="text-sm text-muted-foreground">
                 {demandForDay.orderCount} order{demandForDay.orderCount === 1 ? "" : "s"} to make.
               </p>
+              {/* Batches, not units: this is the run sheet for the kitchen, and the
+                  spare count is what a later order for the same day can take for free. */}
+              <ul className="flex flex-col gap-1.5">
+                {demandForDay.variants.map((variant) => (
+                  <li
+                    key={variant.variantId}
+                    className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-foreground">
+                      {variantsById[variant.variantId]?.name ?? variant.variantId}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {variant.batches} batch{variant.batches === 1 ? "" : "es"} ·{" "}
+                      {variant.units} ordered
+                      {variant.surplusUnits > 0 ? ` · ${variant.surplusUnits} spare` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
               <div className="grid gap-2 @sm:grid-cols-2 @xl:grid-cols-3">
                 {INGREDIENT_ORDER.filter((key) => demandForDay.amounts[key]).map((key) => {
                   const info = INGREDIENT_INFO[key]

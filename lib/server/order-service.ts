@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma"
-import { calculateIngredientsNeeded, restockIngredients } from "@/lib/order-engine"
+import { restockIngredients } from "@/lib/order-engine"
 import {
-  demandByProductionDay,
+  marginalDraw,
+  productionLinesFrom,
   shortagesAfterAdding,
+  type BatchableVariant,
   type StockRecord,
 } from "@/lib/stock-projection"
 import { loadDashboardState, readCalendarSettings } from "@/lib/server/state"
@@ -51,26 +53,48 @@ async function readOnHand(tx: Tx): Promise<StockRecord> {
 }
 
 /**
- * Live demand per production day, for feasibility checks. Only orders that hold
- * a frozen snapshot contribute — On Hold orders were never promised any stock.
+ * Live production lines plus the recipes to batch them against.
+ *
+ * Demand is derived from units and yields, not from orders' consumedIngredients
+ * snapshots: a batch's cost belongs to the production day, and a snapshot only
+ * records one order's share of it. Summing shares back up would lose the
+ * rounding that made them whole batches in the first place.
  */
-async function readDemand(tx: Tx) {
+async function readProductionContext(tx: Tx) {
   const [orders, variants] = await Promise.all([
     tx.order.findMany({ include: { items: true } }),
-    tx.productVariant.findMany(),
+    tx.productVariant.findMany({ include: { recipeItems: { include: { ingredient: true } } } }),
   ])
-  const variantsById = Object.fromEntries(
+
+  const leadTimes = Object.fromEntries(
     variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
   )
-  return demandByProductionDay(
+  const batchable: Record<string, BatchableVariant> = Object.fromEntries(
+    variants.map((variant) => [
+      variant.id,
+      {
+        unitsPerBatch: variant.unitsPerBatch,
+        requires: Object.fromEntries(
+          variant.recipeItems.map((item) => [
+            item.ingredient.key as IngredientKey,
+            item.amountPerBatch,
+          ])
+        ),
+      },
+    ])
+  )
+
+  const lines = productionLinesFrom(
     orders.map((order) => ({
       collectionDate: order.collectionDate,
       productId: order.items[0]?.variantId ?? "",
       status: order.status as OrderStatus,
-      consumedIngredients: parseConsumed(order.consumedIngredients),
+      quantity: order.items[0]?.quantity ?? 0,
     })),
-    variantsById
+    leadTimes
   )
+
+  return { lines, batchable, leadTimes }
 }
 
 /**
@@ -103,8 +127,9 @@ async function readVariant(tx: Tx, variantId: string): Promise<ProductVariant | 
     description: variant.description,
     servings: variant.servings,
     requires: Object.fromEntries(
-      variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerUnit])
+      variant.recipeItems.map((item) => [item.ingredient.key as IngredientKey, item.amountPerBatch])
     ),
+    unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
   }
 }
@@ -228,12 +253,22 @@ export async function createOrder(
     const collectionAt = applyEarliestCollectionTime(collectionDate, settings.earliestCollectionTime)
     const productionDate = productionDateFor(collectionDate, variant.leadTimeDays)
 
-    const needed = calculateIngredientsNeeded(variant, quantity)
-    // Feasibility is now a question about the whole schedule, not about today:
-    // this demand lands on its production day and must not push any day negative.
+    // Feasibility asks whether the whole schedule still works once this order's
+    // units are batched in — not whether today's total is big enough, and not
+    // against a fixed per-unit amount. Re-batching is what lets an order slot
+    // into surplus a batch was already going to produce and cost nothing.
     const onHand = await readOnHand(tx)
-    const demand = await readDemand(tx)
-    const shortages = shortagesAfterAdding(onHand, demand, needed, productionDate)
+    const { lines, batchable } = await readProductionContext(tx)
+    const candidate = { variantId: productId, units: quantity, productionDate }
+    const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
+    // PROVISIONAL. With batching, an order no longer has its "own" ingredients —
+    // it has a share of a batch it may be splitting with other orders. The rule
+    // for attributing that share is still being agreed; this records the marginal
+    // draw (what the kitchen had to fetch *because of* this order, zero when it
+    // slotted into existing surplus) purely so the value is defined. It is not
+    // the chosen rule and nothing depends on it: demand is computed from units
+    // and yields, never by summing these snapshots.
+    const needed = marginalDraw(lines, batchable, candidate)
 
     if (shortages.length === 0) {
       const assignee = await pickStaff(tx, productionDate)
@@ -302,11 +337,19 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
       return { message: "Can't re-check — this product's recipe no longer exists.", tone: "error" as const }
     }
 
-    const needed = calculateIngredientsNeeded(variant, line!.quantity)
     const onHand = await readOnHand(tx)
-    const demand = await readDemand(tx)
+    const { lines, batchable } = await readProductionContext(tx)
     const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
-    const shortages = shortagesAfterAdding(onHand, demand, needed, productionDate)
+    const candidate = { variantId: variant.id, units: line!.quantity, productionDate }
+    const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
+    // PROVISIONAL. With batching, an order no longer has its "own" ingredients —
+    // it has a share of a batch it may be splitting with other orders. The rule
+    // for attributing that share is still being agreed; this records the marginal
+    // draw (what the kitchen had to fetch *because of* this order, zero when it
+    // slotted into existing surplus) purely so the value is defined. It is not
+    // the chosen rule and nothing depends on it: demand is computed from units
+    // and yields, never by summing these snapshots.
+    const needed = marginalDraw(lines, batchable, candidate)
 
     if (shortages.length > 0) {
       await tx.order.update({

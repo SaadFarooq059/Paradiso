@@ -60,10 +60,11 @@ export async function seedDatabase() {
           servings: variant.servings,
           sortOrder: index,
           leadTimeDays: variant.leadTimeDays,
+          unitsPerBatch: variant.unitsPerBatch,
           recipeItems: {
             create: INGREDIENT_ORDER.filter((key) => variant.requires[key]).map((key) => ({
               ingredientId: ingredientIdByKey.get(key)!,
-              amountPerUnit: variant.requires[key]!,
+              amountPerBatch: variant.requires[key]!,
             })),
           },
         },

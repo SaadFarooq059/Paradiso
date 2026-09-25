@@ -1,3 +1,4 @@
+import type { VariantBatchDemand } from "@/lib/stock-projection"
 import type {
   CalendarSettings,
   IngredientAmounts,
@@ -25,6 +26,8 @@ export interface SerializedProductionDayDemand {
   date: string
   amounts: IngredientAmounts
   orderCount: number
+  /** Per-variant batch breakdown: units ordered, batches run, units spare. */
+  variants: VariantBatchDemand[]
 }
 
 export interface DashboardState {
