@@ -9,6 +9,8 @@ import {
   ORDER_STATUS_ORDER,
 } from "@/lib/mock-data"
 import { AnalyticsBarCard } from "@/components/ui/analytics-bar-card"
+import { ExportMenu } from "@/components/ui/export-menu"
+import { analyticsDocument } from "@/lib/export/documents"
 import { Meter } from "@/components/ui/meter"
 import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
 import { StackedBar } from "@/components/ui/stacked-bar"
@@ -142,134 +144,146 @@ export function ReportsAnalyticsPanel({
     .sort((a, b) => b.count - a.count)
 
   return (
-    <div className="@container grid grid-cols-1 gap-4 @2xl:grid-cols-2">
-      <ProportionRingCard
-        className="@2xl:col-span-2 @4xl:col-span-1"
-        caption="In production"
-        total={orderedUnits + surplusUnits}
-        totalSuffix="units coming out of the ovens"
-        segments={[
-          { label: "Ordered", value: orderedUnits, color: "var(--color-chart-2)" },
-          { label: "Spare capacity", value: surplusUnits, color: "var(--color-chart-4)" },
-        ]}
-        emptyMessage="Nothing is in production, so there are no batches to break down yet."
-        action={{ label: "See it day by day", onClick: onViewProduction }}
-      />
-
-      <SectionCard
-        icon={BarChart3}
-        title="Orders by status"
-        description={`${orders.length} order${orders.length === 1 ? "" : "s"} placed this session, by where each one has got to.`}
-      >
-        <StackedBar
-          segments={ORDER_STATUS_ORDER.map((status) => ({
-            label: status,
-            value: statusCounts.find((entry) => entry.status === status)?.count ?? 0,
-            className: STATUS_SEGMENT[status],
-          }))}
-          emptyMessage="No orders yet — the pipeline will fill in here."
+    <div className="@container flex flex-col gap-4">
+      {/* The page heading lives in the dashboard shell, so this row carries the
+          export control alone rather than repeating the title. */}
+      <div className="flex justify-end">
+        <ExportMenu
+          build={() =>
+            analyticsDocument({ orders, variantsById, staff, productionDemand, onHand })
+          }
         />
-      </SectionCard>
+      </div>
 
-      <AnalyticsBarCard
-        title="Product performance"
-        totalAmount={`${totalUnitsOrdered} ${totalUnitsOrdered === 1 ? "unit" : "units"}`}
-        caption="Ordered per variant, all statuses."
-        icon={<TrendingUp className="size-4" />}
-        data={productPerformance.map(({ quantity, variant }) => ({
-          label: variant?.name ?? "Unknown",
-          value: quantity,
-        }))}
-        emptyMessage="No orders yet — product rankings will show up here."
-      />
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+        <ProportionRingCard
+          className="@2xl:col-span-2 @4xl:col-span-1"
+          caption="In production"
+          total={orderedUnits + surplusUnits}
+          totalSuffix="units coming out of the ovens"
+          segments={[
+            { label: "Ordered", value: orderedUnits, color: "var(--color-chart-2)" },
+            { label: "Spare capacity", value: surplusUnits, color: "var(--color-chart-4)" },
+          ]}
+          emptyMessage="Nothing is in production, so there are no batches to break down yet."
+          action={{ label: "See it day by day", onClick: onViewProduction }}
+        />
 
-      <SectionCard
-        icon={Wheat}
-        title="Ingredient consumption"
-        description={`What the kitchen actually draws, counted in whole batches across every scheduled production day${surplusUnits > 0 ? ` — includes ${surplusUnits} surplus unit${surplusUnits === 1 ? "" : "s"} produced but not ordered` : ""}.`}
-      >
-        {consumptionRows.length === 0 ? (
-          <Empty>
-            <EmptyTitle>Nothing consumed yet</EmptyTitle>
-            <EmptyDescription>Ingredient totals will show up once an order is scheduled.</EmptyDescription>
-          </Empty>
-        ) : (
-          consumptionRows.map(({ key, total }) => {
-            const info = INGREDIENT_INFO[key]
-            const stock = onHand[key] ?? 0
-            return (
-              <Meter
-                key={key}
-                label={info.label}
-                ratio={stock > 0 ? total / stock : 0}
-                valueLabel={`${total}${info.unit} of ${stock}${info.unit}`}
-                sublabel={
-                  stock > 0 && total > stock
-                    ? `Over-committed by ${Math.round((total - stock) * 100) / 100}${info.unit}`
-                    : `${stock > 0 ? Math.round((total / stock) * 100) : 0}% of what's in the building`
-                }
-              />
-            )
-          })
-        )}
-      </SectionCard>
-
-      <SectionCard
-        icon={Users}
-        title="Staff workload"
-        description="Orders currently assigned per staff member (the round-robin counter)."
-      >
-        {staff.map((member) => (
-          <Meter
-            key={member.id}
-            leading={
-              <span
-                className={cn(
-                  "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
-                  getStaffColor(member.name)
-                )}
-              >
-                {member.name.charAt(0)}
-              </span>
-            }
-            label={member.name}
-            // Against the busiest person, so the bars answer "who is carrying
-            // more" rather than each filling its own row.
-            ratio={maxOrderCount > 0 ? member.orderCount / maxOrderCount : 0}
-            valueLabel={`${member.orderCount} order${member.orderCount === 1 ? "" : "s"}`}
-            fillClass={getStaffColor(member.name)}
+        <SectionCard
+          icon={BarChart3}
+          title="Orders by status"
+          description={`${orders.length} order${orders.length === 1 ? "" : "s"} placed this session, by where each one has got to.`}
+        >
+          <StackedBar
+            segments={ORDER_STATUS_ORDER.map((status) => ({
+              label: status,
+              value: statusCounts.find((entry) => entry.status === status)?.count ?? 0,
+              className: STATUS_SEGMENT[status],
+            }))}
+            emptyMessage="No orders yet — the pipeline will fill in here."
           />
-        ))}
-      </SectionCard>
+        </SectionCard>
 
-      <SectionCard
-        icon={TriangleAlert}
-        title="On Hold summary"
-        description={`${onHoldOrders.length} order${onHoldOrders.length === 1 ? "" : "s"} currently blocked on stock.`}
-      >
-        {blockRows.length === 0 ? (
-          <Empty>
-            <EmptyTitle>Nothing on hold</EmptyTitle>
-            <EmptyDescription>Every order placed so far had enough stock to schedule.</EmptyDescription>
-          </Empty>
-        ) : (
-          blockRows.map(({ ingredient, count }) => (
-            <div
-              key={ingredient}
-              className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
-            >
-              {/* Status always ships with an icon and a label, never colour alone. */}
-              <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
-              <span className="flex-1 text-sm font-medium text-foreground">
-                {INGREDIENT_INFO[ingredient].label}
-              </span>
-              <span className="font-mono text-xs tabular-nums text-destructive">
-                blocking {count} order{count === 1 ? "" : "s"}
-              </span>
-            </div>
-          ))
-        )}
-      </SectionCard>
+        <AnalyticsBarCard
+          title="Product performance"
+          totalAmount={`${totalUnitsOrdered} ${totalUnitsOrdered === 1 ? "unit" : "units"}`}
+          caption="Ordered per variant, all statuses."
+          icon={<TrendingUp className="size-4" />}
+          data={productPerformance.map(({ quantity, variant }) => ({
+            label: variant?.name ?? "Unknown",
+            value: quantity,
+          }))}
+          emptyMessage="No orders yet — product rankings will show up here."
+        />
+
+        <SectionCard
+          icon={Wheat}
+          title="Ingredient consumption"
+          description={`What the kitchen actually draws, counted in whole batches across every scheduled production day${surplusUnits > 0 ? ` — includes ${surplusUnits} surplus unit${surplusUnits === 1 ? "" : "s"} produced but not ordered` : ""}.`}
+        >
+          {consumptionRows.length === 0 ? (
+            <Empty>
+              <EmptyTitle>Nothing consumed yet</EmptyTitle>
+              <EmptyDescription>Ingredient totals will show up once an order is scheduled.</EmptyDescription>
+            </Empty>
+          ) : (
+            consumptionRows.map(({ key, total }) => {
+              const info = INGREDIENT_INFO[key]
+              const stock = onHand[key] ?? 0
+              return (
+                <Meter
+                  key={key}
+                  label={info.label}
+                  ratio={stock > 0 ? total / stock : 0}
+                  valueLabel={`${total}${info.unit} of ${stock}${info.unit}`}
+                  sublabel={
+                    stock > 0 && total > stock
+                      ? `Over-committed by ${Math.round((total - stock) * 100) / 100}${info.unit}`
+                      : `${stock > 0 ? Math.round((total / stock) * 100) : 0}% of what's in the building`
+                  }
+                />
+              )
+            })
+          )}
+        </SectionCard>
+
+        <SectionCard
+          icon={Users}
+          title="Staff workload"
+          description="Orders currently assigned per staff member (the round-robin counter)."
+        >
+          {staff.map((member) => (
+            <Meter
+              key={member.id}
+              leading={
+                <span
+                  className={cn(
+                    "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+                    getStaffColor(member.name)
+                  )}
+                >
+                  {member.name.charAt(0)}
+                </span>
+              }
+              label={member.name}
+              // Against the busiest person, so the bars answer "who is carrying
+              // more" rather than each filling its own row.
+              ratio={maxOrderCount > 0 ? member.orderCount / maxOrderCount : 0}
+              valueLabel={`${member.orderCount} order${member.orderCount === 1 ? "" : "s"}`}
+              fillClass={getStaffColor(member.name)}
+            />
+          ))}
+        </SectionCard>
+
+        <SectionCard
+          icon={TriangleAlert}
+          title="On Hold summary"
+          description={`${onHoldOrders.length} order${onHoldOrders.length === 1 ? "" : "s"} currently blocked on stock.`}
+        >
+          {blockRows.length === 0 ? (
+            <Empty>
+              <EmptyTitle>Nothing on hold</EmptyTitle>
+              <EmptyDescription>Every order placed so far had enough stock to schedule.</EmptyDescription>
+            </Empty>
+          ) : (
+            blockRows.map(({ ingredient, count }) => (
+              <div
+                key={ingredient}
+                className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
+              >
+                {/* Status always ships with an icon and a label, never colour alone. */}
+                <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+                <span className="flex-1 text-sm font-medium text-foreground">
+                  {INGREDIENT_INFO[ingredient].label}
+                </span>
+                <span className="font-mono text-xs tabular-nums text-destructive">
+                  blocking {count} order{count === 1 ? "" : "s"}
+                </span>
+              </div>
+            ))
+          )}
+        </SectionCard>
+      </div>
     </div>
   )
 }

@@ -3,7 +3,9 @@
 import { TriangleAlert } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ExportMenu } from "@/components/ui/export-menu"
+import { stockLevelsDocument } from "@/lib/export/documents"
 import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
 import type { IngredientKey } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -30,6 +32,9 @@ export function StockLevelsPanel({ available, capacity }: StockLevelsPanelProps)
         <CardDescription>
           Available quantity vs. what&apos;s already committed to scheduled orders.
         </CardDescription>
+        <CardAction>
+          <ExportMenu build={() => stockLevelsDocument(available, capacity)} />
+        </CardAction>
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))]">

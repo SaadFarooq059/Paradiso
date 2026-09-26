@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
+import { ExportMenu } from "@/components/ui/export-menu"
 import { Input } from "@/components/ui/input"
 import { ProductArt } from "@/components/dashboard/product-art"
 import {
@@ -30,6 +31,7 @@ import {
 } from "@/lib/mock-data"
 import { formatDateLong, formatDateShort } from "@/lib/format-date"
 import { dayKey } from "@/lib/production-schedule"
+import { calendarDocument } from "@/lib/export/documents"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
 import type { Order, OrderStatus, ProductVariant, StaffMember } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -140,6 +142,22 @@ export function ProductionCalendarPanel({
         onShift={shift}
         onToday={() => onSelectDate(new Date())}
         showNavigation={view !== "list"}
+        exportSlot={
+          <ExportMenu
+            build={() =>
+              calendarDocument({
+                // The filtered set, not every order: the file should match what
+                // the screen is showing, and the subtitle says which it was.
+                orders: visibleOrders,
+                variantsById,
+                productionDemand,
+                filterSummary: hasFilters
+                  ? `Filtered view: ${visibleOrders.length} of ${orders.length} orders.`
+                  : `All ${orders.length} order${orders.length === 1 ? "" : "s"}.`,
+              })
+            }
+          />
+        }
       />
 
       <FilterBar
@@ -222,6 +240,7 @@ function CalendarToolbar({
   onShift,
   onToday,
   showNavigation,
+  exportSlot,
 }: {
   heading: string
   view: CalendarView
@@ -229,6 +248,7 @@ function CalendarToolbar({
   onShift: (direction: -1 | 1) => void
   onToday: () => void
   showNavigation: boolean
+  exportSlot?: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
@@ -249,33 +269,36 @@ function CalendarToolbar({
         )}
       </div>
 
+      <div className="flex items-center gap-2">
       <div
-        role="tablist"
-        aria-label="Calendar view"
-        className="flex w-fit items-center gap-0.5 rounded-lg border border-border bg-card p-1"
-      >
-        {VIEWS.map((option) => {
-          const Icon = option.icon
-          const isActive = view === option.id
-          return (
-            <button
-              key={option.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => onViewChange(option.id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <Icon className="size-4 shrink-0" />
-              <span className="hidden @sm:inline">{option.label}</span>
-            </button>
-          )
-        })}
+          role="tablist"
+          aria-label="Calendar view"
+          className="flex w-fit items-center gap-0.5 rounded-lg border border-border bg-card p-1"
+        >
+          {VIEWS.map((option) => {
+            const Icon = option.icon
+            const isActive = view === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onViewChange(option.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                <span className="hidden @sm:inline">{option.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      {exportSlot}
       </div>
     </div>
   )
