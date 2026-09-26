@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma"
-import { parseBlockedWeekdays } from "@/lib/production-schedule"
 import {
   demandByProductionDay,
   productionLinesFrom,
@@ -17,10 +16,10 @@ import type {
 } from "@/lib/types"
 import {
   type DashboardState,
-  isOrderStatus,
   parseConsumed,
   parseShortages,
   type SerializedOrder,
+  toAppStatus,
 } from "@/lib/server/serialize"
 
 /** Any Prisma client or interactive-transaction client. */
@@ -38,7 +37,8 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
   const row = await db.calendarSettings.findUnique({ where: { id: 1 } })
   if (!row) return INITIAL_CALENDAR_SETTINGS
   return {
-    blockedWeekdays: parseBlockedWeekdays(row.blockedWeekdays),
+    // A real Int[] column now, so there is nothing to parse.
+    blockedWeekdays: row.blockedWeekdays as CalendarSettings["blockedWeekdays"],
     earliestCollectionTime: row.earliestCollectionTime,
     maxOrdersPerProductionDay: row.maxOrdersPerProductionDay,
   }
@@ -103,7 +103,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       productId: line?.variantId ?? "",
       quantity: line?.quantity ?? 0,
       collectionDate: order.collectionDate.toISOString(),
-      status: isOrderStatus(order.status) ? order.status : "On Hold",
+      status: toAppStatus(order.status),
       // The assignment row is kept after cancellation as a historical record, so
       // Order Detail still shows who had the order; only the workload counter
       // is released.
@@ -111,7 +111,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       shortages: parseShortages(order.shortages),
       consumedIngredients: parseConsumed(order.consumedIngredients),
       statusHistory: order.statusHistory.map((event) => ({
-        status: isOrderStatus(event.status) ? event.status : "On Hold",
+        status: toAppStatus(event.status),
         at: event.at.getTime(),
         note: event.note ?? undefined,
       })),

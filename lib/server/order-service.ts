@@ -15,7 +15,13 @@ import {
   productionDateFor,
   type UnavailableReason,
 } from "@/lib/production-schedule"
-import { parseConsumed, type DashboardState } from "@/lib/server/serialize"
+import {
+  asJson,
+  parseConsumed,
+  toAppStatus,
+  toDbStatus,
+  type DashboardState,
+} from "@/lib/server/serialize"
 import type {
   IngredientAmounts,
   IngredientKey,
@@ -88,7 +94,7 @@ async function readProductionContext(tx: Tx) {
     orders.map((order) => ({
       collectionDate: order.collectionDate,
       productId: order.items[0]?.variantId ?? "",
-      status: order.status as OrderStatus,
+      status: toAppStatus(order.status),
       quantity: order.items[0]?.quantity ?? 0,
     })),
     leadTimes
@@ -150,7 +156,7 @@ async function readScheduleContext(tx: Tx) {
   const shaped: Pick<Order, "collectionDate" | "productId" | "status">[] = orders.map((order) => ({
     collectionDate: order.collectionDate,
     productId: order.items[0]?.variantId ?? "",
-    status: (isKnownStatus(order.status) ? order.status : "On Hold") as OrderStatus,
+    status: toAppStatus(order.status),
   }))
   return { orders: shaped, variantsById }
 }
@@ -213,7 +219,8 @@ async function productionDayLoadByStaff(tx: Tx, productionDate: Date): Promise<M
   const load = new Map<string, number>()
   for (const assignment of assignments) {
     const order = assignment.order
-    if (order.status === "Cancelled" || order.status === "On Hold") continue
+    const status = toAppStatus(order.status)
+    if (status === "Cancelled" || status === "On Hold") continue
     const line = order.items[0]
     if (!line) continue
     const producedOn = productionDateFor(order.collectionDate, line.variant.leadTimeDays)
@@ -292,11 +299,11 @@ export async function createOrder(
       const order = await tx.order.create({
         data: {
           collectionDate: collectionAt,
-          status: "Scheduled",
-          consumedIngredients: JSON.stringify(needed),
-          shortages: "[]",
+          status: toDbStatus("Scheduled"),
+          consumedIngredients: needed,
+          shortages: [],
           items: { create: { variantId: productId, quantity } },
-          statusHistory: { create: { status: "Scheduled" } },
+          statusHistory: { create: { status: toDbStatus("Scheduled") } },
           assignment: { create: { staffId: assignee.id } },
         },
       })
@@ -310,11 +317,11 @@ export async function createOrder(
     const order = await tx.order.create({
       data: {
         collectionDate: collectionAt,
-        status: "On Hold",
-        consumedIngredients: "{}",
-        shortages: JSON.stringify(shortages),
+        status: toDbStatus("On Hold"),
+        consumedIngredients: {},
+        shortages: asJson(shortages),
         items: { create: { variantId: productId, quantity } },
-        statusHistory: { create: { status: "On Hold" } },
+        statusHistory: { create: { status: toDbStatus("On Hold") } },
       },
     })
     return {
@@ -330,7 +337,7 @@ export async function createOrder(
 export async function recheckOrder(orderId: string): Promise<MutationResult> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } })
-    if (!order || order.status !== "On Hold") {
+    if (!order || toAppStatus(order.status) !== "On Hold") {
       return { message: "Order can't be re-checked.", tone: "error" as const }
     }
 
@@ -363,7 +370,10 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
         where: { id: orderId },
         data: {
           statusHistory: {
-            create: { status: "On Hold", note: `Re-checked — ${UNAVAILABLE_NOTE[unavailable]}` },
+            create: {
+              status: toDbStatus("On Hold"),
+              note: `Re-checked — ${UNAVAILABLE_NOTE[unavailable]}`,
+            },
           },
         },
       })
@@ -378,8 +388,10 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
       await tx.order.update({
         where: { id: orderId },
         data: {
-          shortages: JSON.stringify(shortages),
-          statusHistory: { create: { status: "On Hold", note: "Re-checked — still short" } },
+          shortages: asJson(shortages),
+          statusHistory: {
+            create: { status: toDbStatus("On Hold"), note: "Re-checked — still short" },
+          },
         },
       })
       return { message: "Still insufficient stock", tone: "warning" as const }
@@ -401,10 +413,12 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
     await tx.order.update({
       where: { id: orderId },
       data: {
-        status: "Scheduled",
-        shortages: "[]",
-        consumedIngredients: JSON.stringify(needed),
-        statusHistory: { create: { status: "Scheduled", note: "Re-checked and scheduled" } },
+        status: toDbStatus("Scheduled"),
+        shortages: [],
+        consumedIngredients: needed,
+        statusHistory: {
+          create: { status: toDbStatus("Scheduled"), note: "Re-checked and scheduled" },
+        },
         assignment: {
           upsert: {
             create: { staffId: assignee.id },
@@ -435,12 +449,15 @@ export async function advanceOrder(orderId: string, action: string): Promise<Mut
     const order = await tx.order.findUnique({ where: { id: orderId } })
     // Same guard as the in-memory version: a transition only applies from its
     // specific predecessor status, otherwise it is silently a no-op.
-    if (!order || order.status !== transition.from) {
+    if (!order || toAppStatus(order.status) !== transition.from) {
       return { message: "Order is not in a state for that action.", tone: "error" as const }
     }
     await tx.order.update({
       where: { id: orderId },
-      data: { status: transition.to, statusHistory: { create: { status: transition.to } } },
+      data: {
+        status: toDbStatus(transition.to),
+        statusHistory: { create: { status: toDbStatus(transition.to) } },
+      },
     })
     return { message: transition.message, tone: "success" as const }
   })
@@ -456,7 +473,7 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
       where: { id: orderId },
       include: { assignment: true },
     })
-    if (!order || !CANCELLABLE.includes(order.status as OrderStatus)) {
+    if (!order || !CANCELLABLE.includes(toAppStatus(order.status))) {
       return { message: "Order can't be cancelled.", tone: "error" as const }
     }
 
@@ -465,7 +482,7 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
     // from every projection by itself. The consumedIngredients snapshot is left
     // exactly as written — it is still the record of what this order was for,
     // and Order Detail still shows it.
-    const consumed = JSON.parse(order.consumedIngredients) as IngredientAmounts
+    const consumed = parseConsumed(order.consumedIngredients)
     const hadConsumedStock = Object.keys(consumed).length > 0
 
     // Releasing the assignment decrements the workload counter so round-robin
@@ -485,7 +502,10 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
 
     await tx.order.update({
       where: { id: orderId },
-      data: { status: "Cancelled", statusHistory: { create: { status: "Cancelled" } } },
+      data: {
+        status: toDbStatus("Cancelled"),
+        statusHistory: { create: { status: toDbStatus("Cancelled") } },
+      },
     })
 
     return {

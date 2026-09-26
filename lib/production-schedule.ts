@@ -159,16 +159,3 @@ export function selectableCollectionDates(
   }
   return dates
 }
-
-/** Parses the JSON-encoded weekday list stored on CalendarSettings. */
-export function parseBlockedWeekdays(raw: string): Weekday[] {
-  try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (value): value is Weekday => Number.isInteger(value) && value >= 0 && value <= 6
-    )
-  } catch {
-    return []
-  }
-}

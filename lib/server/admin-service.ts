@@ -157,12 +157,12 @@ export async function saveCalendarSettings(
     where: { id: 1 },
     create: {
       id: 1,
-      blockedWeekdays: JSON.stringify(blockedWeekdays),
+      blockedWeekdays,
       earliestCollectionTime: settings.earliestCollectionTime,
       maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
     },
     update: {
-      blockedWeekdays: JSON.stringify(blockedWeekdays),
+      blockedWeekdays,
       earliestCollectionTime: settings.earliestCollectionTime,
       maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
     },

@@ -13,8 +13,22 @@ generator client {
 
 // Prisma 7 moved connection URLs out of the schema: the URL now lives in
 // prisma.config.ts for CLI/migrate, and the running client gets a driver adapter.
+// Postgres rather than SQLite because SQLite is a file on local disk, and a
+// hosted deploy has no durable local disk to put it on.
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+}
+
+/// The six implemented order statuses. On SQLite this had to be a String with a
+/// comment asking everyone to behave; Postgres has real enums, so the database
+/// now refuses an invalid status instead of trusting the application to.
+enum OrderStatus {
+  Scheduled
+  InProduction   @map("In Production")
+  Ready
+  Completed
+  OnHold         @map("On Hold")
+  Cancelled
 }
 
 /// One of the five ingredients. `key` matches IngredientKey in lib/types.ts
@@ -76,10 +90,11 @@ model ProductVariant {
 /// Enforced as a singleton by pinning the id to 1.
 model CalendarSettings {
   id Int @id @default(1)
-  /// JSON array of weekday numbers that cannot be chosen for collection, using
-  /// JavaScript's getDay() convention (0 = Sunday ... 6 = Saturday).
-  /// Seeded as [1] — the shop does not do Monday collections.
-  blockedWeekdays String @default("[1]")
+  /// Weekday numbers that cannot be chosen for collection, using JavaScript's
+  /// getDay() convention (0 = Sunday ... 6 = Saturday). Seeded as [1] — the shop
+  /// does not do Monday collections. A real integer array on Postgres; on SQLite
+  /// this had to be a JSON string that the application parsed by hand.
+  blockedWeekdays Int[] @default([1])
   /// Earliest time of day an order can be collected, as "HH:mm" in 24-hour form.
   earliestCollectionTime String @default("10:30")
   /// Ceiling on how many orders may share one production day. A future
@@ -153,17 +168,15 @@ model Staff {
 model Order {
   id             String   @id @default(uuid())
   collectionDate DateTime
-  /// One of the six implemented statuses: Scheduled | In Production | Ready |
-  /// Completed | On Hold | Cancelled. SQLite has no enums under Prisma, so this
-  /// is a String, constrained in lib/order-status.ts.
-  status         String
-  /// Ingredient amounts actually deducted when this order was scheduled, frozen
-  /// at that moment as JSON ({ eggs: 12, mascarpone: 1000, ... }). Empty for
-  /// orders that never scheduled. Never recomputed from the live recipe, which
-  /// may have changed since.
-  consumedIngredients String @default("{}")
-  /// Why an order is On Hold, as JSON: [{ ingredient, shortBy }].
-  shortages           String @default("[]")
+  status         OrderStatus
+  /// This order's share of the batch it is made in, frozen at the moment it was
+  /// scheduled ({ eggs: 3, mascarpone: 250, ... }). Empty for orders that never
+  /// scheduled. Never recomputed from the live recipe, and never rewritten when
+  /// another order joins the same batch. Real jsonb on Postgres; on SQLite it was
+  /// a String the application JSON.parse'd on every read.
+  consumedIngredients Json @default("{}")
+  /// Why an order is On Hold: [{ ingredient, shortBy }].
+  shortages           Json @default("[]")
   createdAt      DateTime @default(now())
 
   items         OrderItem[]
@@ -188,10 +201,10 @@ model OrderItem {
 
 /// One entry in an order's lifecycle timeline, rendered on Order Detail.
 model OrderStatusEvent {
-  id      Int      @id @default(autoincrement())
+  id      Int         @id @default(autoincrement())
   orderId String
-  status  String
-  at      DateTime @default(now())
+  status  OrderStatus
+  at      DateTime    @default(now())
   note    String?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)

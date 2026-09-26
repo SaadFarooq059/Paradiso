@@ -88,7 +88,7 @@ export async function seedDatabase() {
     await tx.calendarSettings.create({
       data: {
         id: 1,
-        blockedWeekdays: JSON.stringify(INITIAL_CALENDAR_SETTINGS.blockedWeekdays),
+        blockedWeekdays: INITIAL_CALENDAR_SETTINGS.blockedWeekdays,
         earliestCollectionTime: INITIAL_CALENDAR_SETTINGS.earliestCollectionTime,
         maxOrdersPerProductionDay: INITIAL_CALENDAR_SETTINGS.maxOrdersPerProductionDay,
       },
