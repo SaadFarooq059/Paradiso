@@ -70,80 +70,63 @@ export const Sidebar = ({
   );
 };
 
-export const SidebarBody = (props: React.ComponentProps<"div">) => {
-  return (
-    <>
-      <DesktopSidebar {...props} />
-      <MobileSidebar {...props} />
-    </>
-  );
-};
-
-// Note: the upstream version of this component animated width via framer-motion's
-// `animate` prop. In this project's installed framer-motion version that produced
-// no visible effect at all (no inline style was ever applied, width stayed static
-// regardless of state) — confirmed by direct measurement, not assumption. Rather
-// than depend on that, width/opacity/height here are driven by plain CSS
-// transitions tied to the `open` boolean, which is simpler and doesn't have any
-// animation-library version dependency to break.
-export const DesktopSidebar = ({
+/**
+ * The sidebar, rendered ONCE.
+ *
+ * This used to render `children` twice — a DesktopSidebar hidden below md and a
+ * MobileSidebar hidden at md and up — so every nav button existed twice in the
+ * DOM with only CSS deciding which one you could see. Anything walking the tree
+ * (assistive tech, test tooling, our own find/read_page helpers) got two of
+ * everything, and clicking the inert copy silently did nothing.
+ *
+ * Now there is one element. Below md it is a full-screen drawer that slides in;
+ * at md and up the same element becomes the static rail. The hamburger is the
+ * only thing that is mobile-only, and it contains no navigation of its own.
+ */
+export const SidebarBody = ({
   className,
   children,
   ...props
 }: React.ComponentProps<"div">) => {
   const { open, setOpen, animate } = useSidebar();
   return (
-    <div
-      className={cn(
-        "h-full px-4 py-4 hidden md:flex md:flex-col overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex-shrink-0",
-        animate && "transition-[width] duration-300 ease-in-out",
-        open ? "w-[300px]" : "w-[60px]",
-        className
-      )}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      {...props}
-    >
-      {children}
-    </div>
-  );
-};
-
-export const MobileSidebar = ({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"div">) => {
-  const { open, setOpen } = useSidebar();
-  return (
-    <div
-      className={cn(
-        "h-10 px-4 py-4 flex flex-row md:hidden items-center justify-between bg-neutral-100 dark:bg-neutral-800 w-full"
-      )}
-      {...props}
-    >
-      <div className="flex justify-end z-20 w-full">
+    <>
+      {/* Mobile trigger. Not a duplicate of the nav — just the button that opens it. */}
+      <div className="flex h-10 w-full flex-row items-center justify-end bg-sidebar px-4 py-4 md:hidden">
         <Menu
-          className="text-neutral-800 dark:text-neutral-200 cursor-pointer"
+          aria-label="Open navigation"
+          className="cursor-pointer text-neutral-800 dark:text-neutral-200"
           onClick={() => setOpen(!open)}
         />
       </div>
+
       <div
         className={cn(
-          "fixed h-full w-full inset-0 bg-white dark:bg-neutral-900 p-6 sm:p-10 z-[100] flex flex-col justify-between transition-transform duration-300 ease-in-out overflow-y-auto",
+          // Below md: an overlay drawer.
+          "fixed inset-0 z-[100] flex h-full w-full flex-col overflow-y-auto bg-white p-6 transition-transform duration-300 ease-in-out sm:p-10 dark:bg-neutral-900",
           open ? "translate-x-0" : "-translate-x-full",
+          // md and up: the static rail, same element.
+          "md:static md:z-auto md:translate-x-0 md:overflow-hidden md:bg-neutral-100 md:px-4 md:py-4 md:dark:bg-neutral-800",
+          animate && "md:transition-[width] md:duration-300 md:ease-in-out",
+          open ? "md:w-[300px]" : "md:w-[60px]",
           className
         )}
+        // Hover-to-expand is a pointer affordance, so it only applies to the rail.
+        // Touch devices do not fire these, and below md the drawer is driven by
+        // the hamburger instead.
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        {...props}
       >
         <div
-          className="absolute right-6 top-6 sm:right-10 sm:top-10 z-50 text-neutral-800 dark:text-neutral-200 cursor-pointer"
-          onClick={() => setOpen(!open)}
+          className="absolute top-6 right-6 z-50 cursor-pointer text-neutral-800 sm:top-10 sm:right-10 md:hidden dark:text-neutral-200"
+          onClick={() => setOpen(false)}
         >
-          <X />
+          <X aria-label="Close navigation" />
         </div>
         {children}
       </div>
-    </div>
+    </>
   );
 };
 

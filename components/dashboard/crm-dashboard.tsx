@@ -17,12 +17,13 @@ import { PreviewWeddingEnquiriesPanel } from "@/components/dashboard/preview-wed
 import { ProductsRecipesPanel } from "@/components/dashboard/products-recipes-panel"
 import { ReportsAnalyticsPanel } from "@/components/dashboard/reports-analytics-panel"
 import { type DashboardView, isPreviewView, SidebarNav } from "@/components/dashboard/sidebar-nav"
+import { CalendarRulesPanel } from "@/components/dashboard/calendar-rules-panel"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
-import type { IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
+import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 
-const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff"]
+const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff", "calendar-rules"]
 
 const VIEW_META: Record<DashboardView, { title: string; description: string }> = {
   "new-order": {
@@ -56,6 +57,10 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
   staff: {
     title: "Staff Management",
     description: "Add, edit, and remove staff — admin only.",
+  },
+  "calendar-rules": {
+    title: "Calendar Rules",
+    description: "Which days and times orders can be collected — admin only.",
   },
   "preview-logins": {
     title: "Staff Logins & Permissions",
@@ -154,6 +159,10 @@ export function CrmDashboard() {
     void mutate("/api/restock", { body: JSON.stringify({ ingredient, amount }) })
   }
 
+  function handleSaveCalendarSettings(settings: CalendarSettings) {
+    void mutate("/api/settings", { body: JSON.stringify(settings) })
+  }
+
   function handleSaveStaffMember(member: StaffMember) {
     void mutate("/api/staff", { body: JSON.stringify(member) })
   }
@@ -250,6 +259,9 @@ export function CrmDashboard() {
                   staff={staff}
                   productionDemand={productionDemand}
                 />
+              )}
+              {view === "calendar-rules" && isAdmin && (
+                <CalendarRulesPanel settings={calendarSettings} onSave={handleSaveCalendarSettings} />
               )}
               {view === "staff" && isAdmin && (
                 <StaffManagementPanel

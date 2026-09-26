@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { loadDashboardState } from "@/lib/server/state"
 import type { MutationResult } from "@/lib/server/order-service"
-import type { IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
+import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
 
@@ -110,4 +110,63 @@ export async function resetDemoData(): Promise<MutationResult> {
     message: "Demo data reset — orders cleared, stock, recipes and staff counts back to seed.",
     tone: "success",
   }
+}
+
+/**
+ * Updates the shop's calendar rules.
+ *
+ * These are settings rather than constants precisely so they can change without
+ * a deploy, and this is the write path the Calendar Rules screen uses. Values are
+ * validated here rather than trusted from the client: the picker and the
+ * scheduler both read them, so a nonsense value would not merely look wrong, it
+ * would make dates unbookable.
+ */
+export async function saveCalendarSettings(
+  settings: CalendarSettings
+): Promise<MutationResult> {
+  const blockedWeekdays = [...new Set(settings.blockedWeekdays)]
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    .sort((a, b) => a - b)
+
+  // Every day blocked would leave no collection date selectable at all.
+  if (blockedWeekdays.length >= 7) {
+    return {
+      state: await loadDashboardState(),
+      message: "At least one weekday has to stay open for collections.",
+      tone: "error",
+    }
+  }
+
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(settings.earliestCollectionTime)) {
+    return {
+      state: await loadDashboardState(),
+      message: "Earliest collection time must be a 24-hour time like 10:30.",
+      tone: "error",
+    }
+  }
+
+  if (!Number.isInteger(settings.maxOrdersPerProductionDay) || settings.maxOrdersPerProductionDay < 1) {
+    return {
+      state: await loadDashboardState(),
+      message: "A production day has to allow at least one order.",
+      tone: "error",
+    }
+  }
+
+  await prisma.calendarSettings.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      blockedWeekdays: JSON.stringify(blockedWeekdays),
+      earliestCollectionTime: settings.earliestCollectionTime,
+      maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
+    },
+    update: {
+      blockedWeekdays: JSON.stringify(blockedWeekdays),
+      earliestCollectionTime: settings.earliestCollectionTime,
+      maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
+    },
+  })
+
+  return { state: await loadDashboardState(), message: "Calendar rules saved", tone: "success" }
 }

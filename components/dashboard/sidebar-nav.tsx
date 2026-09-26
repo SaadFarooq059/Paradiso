@@ -3,6 +3,7 @@
 import { useState } from "react"
 import {
   BarChart3,
+  CalendarCog,
   CalendarRange,
   ClipboardList,
   HeartHandshake,
@@ -32,6 +33,7 @@ export type DashboardView =
   | "stock"
   | "reports"
   | "staff"
+  | "calendar-rules"
   | PreviewView
 
 /**
@@ -60,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "stock", label: "Stock Levels", icon: PackageSearch },
   { id: "reports", label: "Reports & Analytics", icon: BarChart3 },
   { id: "staff", label: "Staff Management", icon: UserCog, adminOnly: true },
+  { id: "calendar-rules", label: "Calendar Rules", icon: CalendarCog, adminOnly: true },
 ]
 
 const PREVIEW_NAV_ITEMS: NavItem[] = [

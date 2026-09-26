@@ -165,6 +165,13 @@ const UNAVAILABLE_MESSAGE: Record<UnavailableReason, string> = {
   "production-day-full": "That day's production is already full — pick another date.",
 }
 
+/** Terse form of the above, for the order's own lifecycle trail. */
+const UNAVAILABLE_NOTE: Record<UnavailableReason, string> = {
+  "blocked-weekday": "collection day is now blocked",
+  "inside-lead-time": "collection date has passed its lead time",
+  "production-day-full": "production day is now full",
+}
+
 /**
  * Round-robin, now keyed to the production day rather than to lifetime totals.
  *
@@ -334,8 +341,35 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
     }
 
     const onHand = await readOnHand(tx)
-    const { lines, batchable } = await readProductionContext(tx)
+    const { lines, batchable, leadTimes } = await readProductionContext(tx)
     const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
+
+    // The date is re-validated, not just the stock. An order can sit On Hold long
+    // enough for its own lead time to run out: the collection day was reachable
+    // when it was taken, and is not any more. Scheduling it then would promise a
+    // cake that has to start production in the past. The same rule set decides
+    // this as decides a brand new order, so re-checking can never produce a
+    // schedule the New Order screen would have refused.
+    const settings = await readCalendarSettings(tx)
+    const { orders: existingOrders } = await readScheduleContext(tx)
+    const unavailable = collectionDateUnavailableReason(order.collectionDate, {
+      variant,
+      settings,
+      orders: existingOrders,
+      variantsById: leadTimes,
+    })
+    if (unavailable) {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          statusHistory: {
+            create: { status: "On Hold", note: `Re-checked — ${UNAVAILABLE_NOTE[unavailable]}` },
+          },
+        },
+      })
+      return { message: UNAVAILABLE_MESSAGE[unavailable], tone: "error" as const }
+    }
+
     const candidate = { variantId: variant.id, units: line!.quantity, productionDate }
     const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
     const needed = perUnitShare(variant, line!.quantity)
