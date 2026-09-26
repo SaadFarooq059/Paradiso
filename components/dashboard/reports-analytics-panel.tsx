@@ -6,16 +6,15 @@ import {
   getStaffColor,
   INGREDIENT_INFO,
   INGREDIENT_ORDER,
-  ORDER_STATUS_ORDER,
 } from "@/lib/mock-data"
 import { AnalyticsBarCard } from "@/components/ui/analytics-bar-card"
+import { OrdersByStatusChart } from "@/components/dashboard/orders-by-status-chart.lazy"
 import { ExportMenu } from "@/components/ui/export-menu"
 import { analyticsDocument } from "@/lib/export/documents"
 import { Meter } from "@/components/ui/meter"
 import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
-import { StackedBar } from "@/components/ui/stacked-bar"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
-import type { IngredientKey, Order, OrderStatus, ProductVariant, StaffMember } from "@/lib/types"
+import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface ReportsAnalyticsPanelProps {
@@ -30,22 +29,6 @@ interface ReportsAnalyticsPanelProps {
   onViewProduction: () => void
 }
 
-/**
- * Segment fills for the status bar.
- *
- * STATUS_BAR_COLOR maps six statuses onto three hues — Scheduled and Completed
- * are both the success hue — which is fine for separate rows and useless for
- * adjacent stacked segments. Each family keeps its meaning and splits by
- * lightness: soft for the in-progress state, solid for the one it ends in.
- */
-const STATUS_SEGMENT: Record<OrderStatus, string> = {
-  Scheduled: "bg-success/40",
-  Completed: "bg-success",
-  "In Production": "bg-primary/40",
-  Ready: "bg-primary",
-  "On Hold": "bg-destructive/40",
-  Cancelled: "bg-destructive",
-}
 
 function SectionCard({
   icon: Icon,
@@ -84,13 +67,7 @@ export function ReportsAnalyticsPanel({
   onHand,
   onViewProduction,
 }: ReportsAnalyticsPanelProps) {
-  // 1. Orders by status
-  const statusCounts = ORDER_STATUS_ORDER.map((status) => ({
-    status,
-    count: orders.filter((order) => order.status === status).length,
-  }))
-
-  // 2. Product performance — total quantity ordered per variant, across all orders
+  // 1. Product performance — total quantity ordered per variant, across all orders
   const quantityByProduct = new Map<string, number>()
   for (const order of orders) {
     quantityByProduct.set(order.productId, (quantityByProduct.get(order.productId) ?? 0) + order.quantity)
@@ -100,7 +77,7 @@ export function ReportsAnalyticsPanel({
     .sort((a, b) => b.quantity - a.quantity)
   const totalUnitsOrdered = productPerformance.reduce((sum, p) => sum + p.quantity, 0)
 
-  // 3. Ingredient consumption — the kitchen's real draw, taken from each
+  // 2. Ingredient consumption — the kitchen's real draw, taken from each
   // production day's batch totals rather than by summing orders' snapshots.
   // Those snapshots hold each order's *share* of a batch, and a partly-empty
   // batch's surplus belongs to no order, so adding them up would under-report
@@ -128,10 +105,10 @@ export function ReportsAnalyticsPanel({
     total: consumedTotals[key] ?? 0,
   }))
 
-  // 4. Staff workload — the same orderCount the round-robin assignment reads and increments
+  // 3. Staff workload — the same orderCount the round-robin assignment reads and increments
   const maxOrderCount = Math.max(...staff.map((member) => member.orderCount), 1)
 
-  // 5. On Hold summary
+  // 4. On Hold summary
   const onHoldOrders = orders.filter((order) => order.status === "On Hold")
   const blockCounts = new Map<IngredientKey, number>()
   for (const order of onHoldOrders) {
@@ -169,20 +146,9 @@ export function ReportsAnalyticsPanel({
           action={{ label: "See it day by day", onClick: onViewProduction }}
         />
 
-        <SectionCard
-          icon={BarChart3}
-          title="Orders by status"
-          description={`${orders.length} order${orders.length === 1 ? "" : "s"} placed this session, by where each one has got to.`}
-        >
-          <StackedBar
-            segments={ORDER_STATUS_ORDER.map((status) => ({
-              label: status,
-              value: statusCounts.find((entry) => entry.status === status)?.count ?? 0,
-              className: STATUS_SEGMENT[status],
-            }))}
-            emptyMessage="No orders yet — the pipeline will fill in here."
-          />
-        </SectionCard>
+        {/* Spans the row: an area chart needs width to be readable, and this is
+            the card that shows the whole order book rather than one slice. */}
+        <OrdersByStatusChart orders={orders} className="@2xl:col-span-2" />
 
         <AnalyticsBarCard
           title="Product performance"

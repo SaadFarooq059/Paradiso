@@ -24,6 +24,12 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-status-scheduled: var(--status-scheduled);
+  --color-status-in-production: var(--status-in-production);
+  --color-status-ready: var(--status-ready);
+  --color-status-completed: var(--status-completed);
+  --color-status-on-hold: var(--status-on-hold);
+  --color-status-cancelled: var(--status-cancelled);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-accent-foreground: var(--accent-foreground);
@@ -58,6 +64,21 @@
   --popover: oklch(0.975 0.029 87); /* #FFF6E1 */
   --popover-foreground: oklch(0.22 0.035 30);
   --primary: oklch(0.231 0.094 29.6); /* #3F0000 */
+
+  /* Order lifecycle fills, used by the Orders-by-status chart and its tiles.
+     Six statuses over three hue families: each family keeps its meaning and
+     splits by lightness, so Scheduled and Completed read as the same idea at
+     different stages. Declared as tokens rather than mixed inline because the
+     stat tiles sit outside the chart's own variable scope, and because dark
+     mode needs its own step rather than the same mix against a dark surface —
+     mixing green 45% into a dark brown card turns it olive. */
+  --status-scheduled: oklch(0.78 0.09 145);
+  --status-in-production: oklch(0.52 0.1 30);
+  --status-ready: oklch(0.36 0.1 29.6);
+  --status-completed: oklch(0.6 0.12 145);
+  --status-on-hold: oklch(0.76 0.11 45);
+  --status-cancelled: oklch(0.577 0.245 27.325);
+
   --primary-foreground: oklch(0.975 0.029 87); /* #FFF6E1 */
   --secondary: oklch(0.95 0.02 80);
   --secondary-foreground: oklch(0.25 0.03 30);
@@ -92,6 +113,16 @@
   --background: oklch(0.16 0.02 30);
   --foreground: oklch(0.96 0.02 85);
   --card: oklch(0.22 0.025 30);
+
+  /* Lighter, still saturated: these sit on a dark card, so the light steps
+     would sink into it. */
+  --status-scheduled: oklch(0.72 0.12 145);
+  --status-in-production: oklch(0.62 0.14 30);
+  --status-ready: oklch(0.5 0.13 29.6);
+  --status-completed: oklch(0.8 0.14 145);
+  --status-on-hold: oklch(0.78 0.13 55);
+  --status-cancelled: oklch(0.704 0.191 22.216);
+
   --card-foreground: oklch(0.96 0.02 85);
   --popover: oklch(0.22 0.025 30);
   --popover-foreground: oklch(0.96 0.02 85);
