@@ -244,7 +244,12 @@ export function CrmDashboard() {
               )}
               {view === "stock" && <StockLevelsPanel available={stock} capacity={capacity} />}
               {view === "reports" && (
-                <ReportsAnalyticsPanel orders={orders} variantsById={variantsById} staff={staff} />
+                <ReportsAnalyticsPanel
+                  orders={orders}
+                  variantsById={variantsById}
+                  staff={staff}
+                  productionDemand={productionDemand}
+                />
               )}
               {view === "staff" && isAdmin && (
                 <StaffManagementPanel

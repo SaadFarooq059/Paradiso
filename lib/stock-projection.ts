@@ -253,21 +253,31 @@ export function shortagesAfterAdding(
 }
 
 /**
- * What adding this order would actually cost the kitchen: the extra ingredients
- * drawn once the day is re-batched. Zero when the order slots into surplus that
- * was already going to be produced.
+ * One order's share of the batch it belongs to: the batch recipe divided by the
+ * batch's yield, times the units ordered.
+ *
+ * This is what consumedIngredients records. It depends only on the recipe and on
+ * this order's own quantity — never on who else happens to share the production
+ * day — which is what keeps the snapshot frozen at creation. Placing a second
+ * order into the same batch does not rewrite the first one's record.
+ *
+ * The deliberate consequence is that shares do not always add up to what the
+ * kitchen drew. One Suprema records 3 eggs while its batch really took 6; the
+ * missing 3 are the surplus unit nobody ordered. That gap is real and belongs to
+ * the production day, not to a customer, which is where the calendar shows it as
+ * spare capacity. Anything that needs true consumption reads the day's batch
+ * totals instead — see totalCommitted.
+ *
+ * Rounded to two decimals because a share is frequently fractional (a Mini is an
+ * eighth of its batch) and raw float division would store 0.24999999999999998.
  */
-export function marginalDraw(
-  existingLines: ProductionLine[],
-  variantsById: Record<string, BatchableVariant>,
-  candidate: ProductionLine
-): IngredientAmounts {
-  const before = totalCommitted(demandByProductionDay(existingLines, variantsById))
-  const after = totalCommitted(demandByProductionDay([...existingLines, candidate], variantsById))
-  const draw: IngredientAmounts = {}
+export function perUnitShare(variant: BatchableVariant, units: number): IngredientAmounts {
+  const share: IngredientAmounts = {}
+  const perBatchYield = Math.max(1, variant.unitsPerBatch)
   for (const ingredient of INGREDIENT_ORDER) {
-    const delta = (after[ingredient] ?? 0) - (before[ingredient] ?? 0)
-    if (delta) draw[ingredient] = delta
+    const perBatch = variant.requires[ingredient]
+    if (!perBatch) continue
+    share[ingredient] = Math.round((perBatch / perBatchYield) * units * 100) / 100
   }
-  return draw
+  return share
 }

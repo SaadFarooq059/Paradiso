@@ -116,7 +116,7 @@ export function OrderDetailPanel({
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-sm font-medium text-foreground">Ingredients consumed</h3>
+            <h3 className="text-sm font-medium text-foreground">This order&apos;s share of the batch</h3>
             {consumedEntries.length > 0 ? (
               <>
                 <div className="flex flex-wrap gap-1.5">
@@ -128,13 +128,15 @@ export function OrderDetailPanel({
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Frozen at the moment this order was scheduled — later recipe edits don&apos;t change
-                  this record.
+                  A share of the batch this order is made in, not a separate bake — the kitchen
+                  bakes whole batches and orders for the same day share them. Frozen when the order
+                  was scheduled, so later recipe edits and other orders joining the same batch
+                  don&apos;t change it.
                 </p>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Nothing was deducted from stock for this order.
+                This order isn&apos;t booked into production, so it has no share of a batch yet.
               </p>
             )}
           </div>

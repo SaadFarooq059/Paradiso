@@ -124,3 +124,80 @@ test("different variants on one production day are batched separately", async ({
   // Grande 4 eggs/batch + Mini 2 eggs/batch, one batch each.
   expect(day!.amounts.eggs).toBe(6)
 })
+
+/**
+ * Attribution: what one order records as its own ingredients when it shares a
+ * batch with others. The rule is the batch recipe over the batch's yield, times
+ * the units ordered — so it depends only on the recipe and the order itself.
+ */
+
+test("an order records its per-unit share of the batch, not the whole batch", async ({ page }) => {
+  const result = await placeOrder(page, "suprema-classico", 1)
+  expect(result.tone).toBe("success")
+
+  const state = await readState(page)
+  const order = state.orders[0]
+
+  // Suprema: 6 eggs per batch, yield 2. One cake is half a batch.
+  expect(order.consumedIngredients.eggs).toBe(3)
+  expect(order.consumedIngredients.mascarpone).toBe(250)
+
+  // The kitchen still drew the whole batch; the other half is surplus.
+  expect(batchFor(state, "suprema-classico")!.amounts.eggs).toBe(6)
+})
+
+test("a later order joining the same batch does not rewrite the first order's share", async ({
+  page,
+}) => {
+  const first = await placeOrder(page, "suprema-classico", 1)
+  const before = await readState(page)
+  const firstBefore = before.orders.find((o) => o.id === first.orderId)!
+  expect(firstBefore.consumedIngredients.eggs).toBe(3)
+
+  await placeOrder(page, "suprema-classico", 1)
+
+  const after = await readState(page)
+  const firstAfter = after.orders.find((o) => o.id === first.orderId)!
+  const second = after.orders.find((o) => o.id !== first.orderId)!
+
+  // Frozen at creation: the first order's record is untouched.
+  expect(firstAfter.consumedIngredients).toEqual(firstBefore.consumedIngredients)
+  expect(second.consumedIngredients.eggs).toBe(3)
+
+  // Both halves attributed, and together they equal the batch that was drawn.
+  expect(batchFor(after, "suprema-classico")!.amounts.eggs).toBe(6)
+})
+
+test("shares are fractional when a batch yields many units", async ({ page }) => {
+  // Mini: 2 eggs per batch, yield 8. One Mini is an eighth of a batch.
+  await placeOrder(page, "mini-classico", 1)
+
+  const state = await readState(page)
+  expect(state.orders[0].consumedIngredients.eggs).toBe(0.25)
+  expect(state.orders[0].consumedIngredients.mascarpone).toBe(18.75)
+
+  // A whole batch is still drawn for the one cake.
+  expect(batchFor(state, "mini-classico")!.amounts.eggs).toBe(2)
+})
+
+test("a cancelled order keeps its share on record but frees the batch", async ({ page }) => {
+  const placed = await placeOrder(page, "suprema-classico", 1)
+  const before = await readState(page)
+  expect(before.capacity.eggs).toBe(20)
+
+  const response = await page.request.post(`/api/orders/${placed.orderId}`, {
+    data: { action: "cancel" },
+  })
+  expect(response.ok()).toBeTruthy()
+
+  const after = await readState(page)
+  const cancelled = after.orders.find((o) => o.id === placed.orderId)!
+
+  expect(cancelled.status).toBe("Cancelled")
+  // The snapshot survives as the record of what the order was for...
+  expect(cancelled.consumedIngredients.eggs).toBe(3)
+  // ...while the batch it booked disappears, and on-hand never moved.
+  expect(after.productionDemand).toHaveLength(0)
+  expect(after.capacity.eggs).toBe(20)
+  expect(after.stock.eggs).toBe(20)
+})

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { restockIngredients } from "@/lib/order-engine"
 import {
-  marginalDraw,
+  perUnitShare,
   productionLinesFrom,
   shortagesAfterAdding,
   type BatchableVariant,
@@ -261,14 +261,10 @@ export async function createOrder(
     const { lines, batchable } = await readProductionContext(tx)
     const candidate = { variantId: productId, units: quantity, productionDate }
     const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
-    // PROVISIONAL. With batching, an order no longer has its "own" ingredients —
-    // it has a share of a batch it may be splitting with other orders. The rule
-    // for attributing that share is still being agreed; this records the marginal
-    // draw (what the kitchen had to fetch *because of* this order, zero when it
-    // slotted into existing surplus) purely so the value is defined. It is not
-    // the chosen rule and nothing depends on it: demand is computed from units
-    // and yields, never by summing these snapshots.
-    const needed = marginalDraw(lines, batchable, candidate)
+    // This order's share of its batch: the batch recipe over the batch's yield,
+    // times the units ordered. Depends only on the recipe and this order, so a
+    // later order joining the same batch never rewrites it.
+    const needed = perUnitShare(variant, quantity)
 
     if (shortages.length === 0) {
       const assignee = await pickStaff(tx, productionDate)
@@ -342,14 +338,7 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
     const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
     const candidate = { variantId: variant.id, units: line!.quantity, productionDate }
     const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
-    // PROVISIONAL. With batching, an order no longer has its "own" ingredients —
-    // it has a share of a batch it may be splitting with other orders. The rule
-    // for attributing that share is still being agreed; this records the marginal
-    // draw (what the kitchen had to fetch *because of* this order, zero when it
-    // slotted into existing surplus) purely so the value is defined. It is not
-    // the chosen rule and nothing depends on it: demand is computed from units
-    // and yields, never by summing these snapshots.
-    const needed = marginalDraw(lines, batchable, candidate)
+    const needed = perUnitShare(variant, line!.quantity)
 
     if (shortages.length > 0) {
       await tx.order.update({

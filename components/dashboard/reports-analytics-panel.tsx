@@ -10,6 +10,7 @@ import {
   ORDER_STATUS_ORDER,
   STATUS_BAR_COLOR,
 } from "@/lib/mock-data"
+import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
 import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +18,8 @@ interface ReportsAnalyticsPanelProps {
   orders: Order[]
   variantsById: Record<string, ProductVariant>
   staff: StaffMember[]
+  /** Batched demand per production day — the real ingredient draw. */
+  productionDemand: ProductionDayDemand[]
 }
 
 interface BarRowProps {
@@ -77,7 +80,12 @@ function SectionCard({
   )
 }
 
-export function ReportsAnalyticsPanel({ orders, variantsById, staff }: ReportsAnalyticsPanelProps) {
+export function ReportsAnalyticsPanel({
+  orders,
+  variantsById,
+  staff,
+  productionDemand,
+}: ReportsAnalyticsPanelProps) {
   // 1. Orders by status
   const statusCounts = ORDER_STATUS_ORDER.map((status) => ({
     status,
@@ -95,15 +103,23 @@ export function ReportsAnalyticsPanel({ orders, variantsById, staff }: ReportsAn
     .sort((a, b) => b.quantity - a.quantity)
   const maxProductQuantity = Math.max(...productPerformance.map((p) => p.quantity), 1)
 
-  // 3. Ingredient consumption — summed from frozen consumedIngredients snapshots, non-cancelled orders only
-  const nonCancelledOrders = orders.filter((order) => order.status !== "Cancelled")
+  // 3. Ingredient consumption — the kitchen's real draw, taken from each
+  // production day's batch totals rather than by summing orders' snapshots.
+  // Those snapshots hold each order's *share* of a batch, and a partly-empty
+  // batch's surplus belongs to no order, so adding them up would under-report
+  // what actually left the store cupboard.
   const consumedTotals: Partial<Record<IngredientKey, number>> = {}
-  for (const order of nonCancelledOrders) {
+  for (const day of productionDemand) {
     for (const key of INGREDIENT_ORDER) {
-      const amount = order.consumedIngredients[key]
+      const amount = day.amounts[key]
       if (amount) consumedTotals[key] = (consumedTotals[key] ?? 0) + amount
     }
   }
+  // Units produced but not ordered, across every scheduled batch.
+  const surplusUnits = productionDemand.reduce(
+    (total, day) => total + day.variants.reduce((sum, v) => sum + v.surplusUnits, 0),
+    0
+  )
   const consumptionRows = INGREDIENT_ORDER.filter((key) => consumedTotals[key]).map((key) => ({
     key,
     total: consumedTotals[key] ?? 0,
@@ -173,7 +189,7 @@ export function ReportsAnalyticsPanel({ orders, variantsById, staff }: ReportsAn
       <SectionCard
         icon={Wheat}
         title="Ingredient consumption"
-        description="Summed from each order's frozen consumedIngredients snapshot — non-cancelled orders only, never recalculated from the live recipe."
+        description={`What the kitchen actually draws, counted in whole batches across every scheduled production day${surplusUnits > 0 ? ` — includes ${surplusUnits} surplus unit${surplusUnits === 1 ? "" : "s"} produced but not ordered` : ""}.`}
       >
         {consumptionRows.length === 0 ? (
           <Empty>
