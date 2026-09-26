@@ -2,7 +2,6 @@ import { BarChart3, TrendingUp, TriangleAlert, Users, Wheat } from "lucide-react
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
-import { ProductArt } from "@/components/dashboard/product-art"
 import {
   getStaffColor,
   INGREDIENT_INFO,
@@ -10,6 +9,7 @@ import {
   ORDER_STATUS_ORDER,
   STATUS_BAR_COLOR,
 } from "@/lib/mock-data"
+import { AnalyticsBarCard } from "@/components/ui/analytics-bar-card"
 import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
 import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
@@ -105,7 +105,7 @@ export function ReportsAnalyticsPanel({
   const productPerformance = [...quantityByProduct.entries()]
     .map(([productId, quantity]) => ({ productId, quantity, variant: variantsById[productId] }))
     .sort((a, b) => b.quantity - a.quantity)
-  const maxProductQuantity = Math.max(...productPerformance.map((p) => p.quantity), 1)
+  const totalUnitsOrdered = productPerformance.reduce((sum, p) => sum + p.quantity, 0)
 
   // 3. Ingredient consumption — the kitchen's real draw, taken from each
   // production day's batch totals rather than by summing orders' snapshots.
@@ -180,34 +180,17 @@ export function ReportsAnalyticsPanel({
         ))}
       </SectionCard>
 
-      <SectionCard
-        icon={TrendingUp}
+      <AnalyticsBarCard
         title="Product performance"
-        description="Total quantity ordered per variant, all statuses."
-      >
-        {productPerformance.length === 0 ? (
-          <Empty>
-            <EmptyTitle>No orders yet</EmptyTitle>
-            <EmptyDescription>Product rankings will show up here.</EmptyDescription>
-          </Empty>
-        ) : (
-          productPerformance.map(({ productId, quantity, variant }) => (
-            <BarRow
-              key={productId}
-              leading={
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                  <ProductArt productId={productId} className="size-6" />
-                </div>
-              }
-              label={variant?.name ?? "Unknown"}
-              value={quantity}
-              max={maxProductQuantity}
-              valueLabel={`${quantity} units`}
-              colorClass="bg-primary"
-            />
-          ))
-        )}
-      </SectionCard>
+        totalAmount={`${totalUnitsOrdered} ${totalUnitsOrdered === 1 ? "unit" : "units"}`}
+        caption="Ordered per variant, all statuses."
+        icon={<TrendingUp className="size-4" />}
+        data={productPerformance.map(({ quantity, variant }) => ({
+          label: variant?.name ?? "Unknown",
+          value: quantity,
+        }))}
+        emptyMessage="No orders yet — product rankings will show up here."
+      />
 
       <SectionCard
         icon={Wheat}

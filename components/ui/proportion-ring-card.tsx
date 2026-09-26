@@ -158,8 +158,11 @@ export function ProportionRingCard({
 
         <div className={cn("px-5 pb-5", isEmpty ? "pt-0" : "-mt-6")}>
           <div className="flex items-start justify-between gap-4">
-            {segments.map((segment) => {
-              const share = sum > 0 ? Math.round((segment.value / sum) * 100) : 0
+            {segments.map((segment, index) => {
+              // Round once and derive the other, or 62.5/37.5 prints as 63% and
+              // 38% and the card claims 101%.
+              const firstPct = sum > 0 ? Math.round((segments[0].value / sum) * 100) : 0
+              const share = sum > 0 ? (index === 0 ? firstPct : 100 - firstPct) : 0
               return (
                 <div key={segment.label} className="flex flex-col gap-1">
                   <span className="flex items-center gap-1.5">
