@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test"
 
-import { batchFor, committed, placeOrder, readState, resetDemoData } from "./support"
+import { batchFor, committed, placeOrder, readState, resetDemoData, signInViaApi } from "./support"
 
 /**
  * Batching and yield.
@@ -16,6 +16,8 @@ import { batchFor, committed, placeOrder, readState, resetDemoData } from "./sup
 
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
+  // The data routes require a session now, so the API-level specs need one too.
+  await signInViaApi(page)
 })
 
 test("one Suprema runs a whole batch and leaves a spare unit", async ({ page }) => {

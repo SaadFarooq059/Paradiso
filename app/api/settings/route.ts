@@ -2,9 +2,12 @@ import { saveCalendarSettings } from "@/lib/server/admin-service"
 import { badRequest, mutationResponse } from "@/lib/server/respond"
 import type { Weekday } from "@/lib/types"
 
+import { withAdmin } from "@/lib/server/guard"
+
 export const dynamic = "force-dynamic"
 
 export async function POST(request: Request) {
+  return withAdmin(async () => {
   const body = await request.json().catch(() => null)
   if (!body) return badRequest("A settings body is required.")
 
@@ -30,4 +33,5 @@ export async function POST(request: Request) {
       maxOrdersPerProductionDay,
     })
   )
+  })
 }

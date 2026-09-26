@@ -10,7 +10,10 @@ async function signIn(page: Page) {
   await page.goto("/sign-in")
   // The staff picker defaults to the first roster entry (Aisha) — round-robin
   // assignment doesn't depend on who's signed in, so the default is fine here.
-  await page.locator("#password").fill("dummy-password")
+  // The password is now checked server-side against DEMO_PASSWORD.
+  const password = process.env.DEMO_PASSWORD
+  expect(password, "DEMO_PASSWORD must be set for the suite to sign in").toBeTruthy()
+  await page.locator("#password").fill(password!)
   await page.getByRole("button", { name: "Sign in" }).click()
   await page.waitForURL("/")
 }

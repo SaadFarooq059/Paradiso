@@ -23,10 +23,30 @@ export function dayAttribute(date: Date): string {
 /**
  * The database persists, so every spec resets it to the seed state first —
  * otherwise a second run starts with the previous run's orders.
+ *
+ * Reset is no longer open: it takes either an admin session or RESET_TOKEN. The
+ * suite uses the token so it can reset before signing in.
  */
 export async function resetDemoData(page: Page) {
-  const response = await page.request.post("/api/reset")
+  const token = process.env.RESET_TOKEN
+  expect(token, "RESET_TOKEN must be set for the suite to reset the database").toBeTruthy()
+  const response = await page.request.post("/api/reset", {
+    headers: { authorization: `Bearer ${token}` },
+  })
   expect(response.ok()).toBeTruthy()
+}
+
+/**
+ * Signs in over the API. page.request shares the page's cookie jar, so the
+ * session cookie this sets authenticates both later API calls and the UI.
+ */
+export async function signInViaApi(page: Page, staffId = "aisha") {
+  const password = process.env.DEMO_PASSWORD
+  expect(password, "DEMO_PASSWORD must be set for the suite to sign in").toBeTruthy()
+  const response = await page.request.post("/api/auth", {
+    data: { staffId, password },
+  })
+  expect(response.ok(), "sign-in should succeed with the configured demo password").toBeTruthy()
 }
 
 export interface DashboardState {

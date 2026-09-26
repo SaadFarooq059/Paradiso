@@ -1,68 +1,89 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useState } from "react"
 
-import { INITIAL_STAFF } from "@/lib/mock-data"
 import type { StaffMember } from "@/lib/types"
 
-const SESSION_KEY = "paradiso-session-staff-id"
-
 /**
- * Dummy, backend-free auth: "signing in" means picking a name from the seed staff
- * roster (lib/mock-data.ts INITIAL_STAFF), matching how a real backend would
- * eventually work (login = a specific employee, with a role). Session is a staff id
- * in sessionStorage — tab-scoped, resets on close, consistent with the rest of this
- * prototype's session-only data model. Staff added later via Staff Management live
- * only in that session's React state and won't appear here on a fresh sign-in — this
- * whole layer is expected to be replaced once a real backend exists.
+ * A demo gate, not an authentication system.
+ *
+ * Previously this was entirely client-side: a staff id in sessionStorage, no
+ * password checked anywhere, so the "admin" screens were hidden rather than
+ * protected and anyone could grant themselves the role from devtools. The
+ * session now lives in an httpOnly signed cookie the server issues, and this
+ * context only reflects what the server says — it cannot mint a session of its
+ * own. The API routes enforce the same thing independently, so hiding a screen
+ * is a convenience rather than the control.
  */
 interface AuthContextValue {
   currentUser: StaffMember | null
   isLoading: boolean
-  signIn: (staffId: string) => boolean
-  signOut: () => void
+  /** True when the deployment has a password configured at all. */
+  isConfigured: boolean
+  signIn: (staffId: string, password: string) => Promise<string | null>
+  signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<StaffMember | null>(null)
+  const [isConfigured, setIsConfigured] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     try {
-      const storedId = sessionStorage.getItem(SESSION_KEY)
-      const found = storedId ? INITIAL_STAFF.find((member) => member.id === storedId) : undefined
-      if (found) setCurrentUser(found)
+      const response = await fetch("/api/auth", { cache: "no-store" })
+      const payload = (await response.json()) as {
+        currentUser: StaffMember | null
+        configured: boolean
+      }
+      setCurrentUser(payload.currentUser)
+      setIsConfigured(payload.configured)
     } catch {
-      // sessionStorage unavailable (e.g. private browsing) — just stay signed out.
+      setCurrentUser(null)
+    } finally {
+      setIsLoading(false)
     }
-    setIsLoading(false)
   }, [])
 
-  function signIn(staffId: string) {
-    const found = INITIAL_STAFF.find((member) => member.id === staffId)
-    if (!found) return false
-    setCurrentUser(found)
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  /** Returns an error message, or null on success. */
+  async function signIn(staffId: string, password: string): Promise<string | null> {
     try {
-      sessionStorage.setItem(SESSION_KEY, staffId)
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, password }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        currentUser?: StaffMember
+        message?: string
+      }
+      if (!response.ok || !payload.currentUser) {
+        return payload.message ?? "Couldn't sign in."
+      }
+      setCurrentUser(payload.currentUser)
+      return null
     } catch {
-      // ignore — session just won't survive a reload
+      return "Couldn't reach the server."
     }
-    return true
   }
 
-  function signOut() {
-    setCurrentUser(null)
+  async function signOut() {
     try {
-      sessionStorage.removeItem(SESSION_KEY)
+      await fetch("/api/auth", { method: "DELETE" })
     } catch {
-      // ignore
+      // Even if the call fails, drop the local view of the session.
     }
+    setCurrentUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ currentUser, isLoading, isConfigured, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

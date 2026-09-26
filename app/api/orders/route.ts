@@ -1,9 +1,12 @@
 import { createOrder } from "@/lib/server/order-service"
 import { badRequest, mutationResponse } from "@/lib/server/respond"
 
+import { withSession } from "@/lib/server/guard"
+
 export const dynamic = "force-dynamic"
 
 export async function POST(request: Request) {
+  return withSession(async () => {
   const body = await request.json().catch(() => null)
   const productId = typeof body?.productId === "string" ? body.productId : null
   const quantity = Number.parseInt(String(body?.quantity), 10)
@@ -14,4 +17,5 @@ export async function POST(request: Request) {
   if (!collectionDate || Number.isNaN(collectionDate.getTime())) return badRequest("A valid collection date is required.")
 
   return mutationResponse(await createOrder(productId, quantity, collectionDate))
+  })
 }

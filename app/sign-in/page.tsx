@@ -15,18 +15,24 @@ import { INITIAL_STAFF } from "@/lib/mock-data"
 
 export default function SignInPage() {
   const router = useRouter()
-  const { signIn } = useAuth()
+  const { signIn, isConfigured } = useAuth()
   const [staffId, setStaffId] = useState(INITIAL_STAFF[0]?.id ?? "")
   const [password, setPassword] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const member = INITIAL_STAFF.find((m) => m.id === staffId)
-    if (!member || !signIn(staffId)) {
-      toast.error("Couldn't sign in — pick a staff member.")
+    setIsSubmitting(true)
+    // The password is checked on the server; this component never sees whether
+    // it was right beyond the answer that comes back.
+    const error = await signIn(staffId, password)
+    setIsSubmitting(false)
+    if (error) {
+      toast.error(error)
       return
     }
-    toast.success(`Welcome back, ${member.name}!`)
+    const member = INITIAL_STAFF.find((m) => m.id === staffId)
+    toast.success(`Welcome back, ${member?.name ?? "there"}!`)
     router.push("/")
   }
 
@@ -61,7 +67,9 @@ export default function SignInPage() {
               </SelectContent>
             </Select>
             <FieldDescription>
-              Dummy auth for now — this will connect to real accounts once the backend is ready.
+              {isConfigured
+                ? "Shared demo password — everyone signs in with the same one and picks who they are."
+                : "This deployment has no password configured, so sign-in is disabled."}
             </FieldDescription>
           </Field>
 
@@ -79,7 +87,7 @@ export default function SignInPage() {
           </Field>
         </FieldGroup>
 
-        <Button type="submit" className="w-full" disabled={!staffId}>
+        <Button type="submit" className="w-full" disabled={!staffId || !password || isSubmitting}>
           <LogIn data-icon="inline-start" />
           Sign in
         </Button>

@@ -188,8 +188,10 @@ export function CrmDashboard() {
         staff={staff}
         currentUser={currentUser}
         onResetDemoData={handleResetDemoData}
-        onSignOut={() => {
-          signOut()
+        onSignOut={async () => {
+          // Await it: the server has to clear the session cookie before we land
+          // on the sign-in page, or the redirect there would bounce straight back.
+          await signOut()
           router.replace("/sign-in")
         }}
       />

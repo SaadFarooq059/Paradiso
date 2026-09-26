@@ -1,4 +1,9 @@
+import { config as loadEnv } from "dotenv"
 import { defineConfig } from "@playwright/test"
+
+// The suite needs DEMO_PASSWORD to sign in and RESET_TOKEN to reset between
+// specs, and it runs outside Next.js, which is what normally loads .env.
+loadEnv()
 
 // Port is overridable so the suite can target an already-running dev server.
 // Without this the config always pointed at :3000 with reuseExistingServer, which
