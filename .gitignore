@@ -26,3 +26,5 @@ prisma/*.db-journal
 
 # TypeScript incremental build cache — a build artifact, rewritten on every typecheck.
 tsconfig.tsbuildinfo
+.vercel
+.env*

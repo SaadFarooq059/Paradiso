@@ -35,7 +35,22 @@ npm run start
 
 `db:seed` is destructive by design — it clears the tables it owns and rewrites
 them from `lib/mock-data.ts`, so a fresh database always comes up with the same
-dummy data. Do not run it against a database holding real orders.
+dummy data.
+
+**It refuses to run against a database that already has rows in it.** That is
+deliberate: this command lives in deploy notes, and by the time anyone runs it
+again the database may hold real orders. It prints what it would have destroyed
+and exits non-zero. Overriding is explicit:
+
+```bash
+npm run db:seed -- --force      # interactive
+FORCE_SEED=true npm run db:seed # CI
+```
+
+The sidebar's "Reset demo data" button does not go through this script — it calls
+the same seed function through the API, where the caller is an authenticated
+admin who has asked for exactly that. Guarding the script does not disarm the
+demo.
 
 ## The demo gate
 
