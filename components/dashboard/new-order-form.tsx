@@ -24,6 +24,10 @@ interface NewOrderFormProps {
   orders: Order[]
   variantsById: Record<string, ProductVariant>
   settings: CalendarSettings
+  /** Collection date pre-chosen elsewhere (picking a day on the calendar). */
+  initialDate?: Date | null
+  /** Called once the initial date has been taken, so it is applied only once. */
+  onInitialDateApplied?: () => void
   onSubmit: (productId: string, quantity: number, collectionDate: Date) => void
 }
 
@@ -32,6 +36,8 @@ export function NewOrderForm({
   orders,
   variantsById,
   settings,
+  initialDate,
+  onInitialDateApplied,
   onSubmit,
 }: NewOrderFormProps) {
   const quantityId = useId()
@@ -65,6 +71,15 @@ export function NewOrderForm({
     (day: Date) => (availability ? !isCollectionDateSelectable(day, availability) : true),
     [availability]
   )
+
+  // A date picked on the calendar is only a shortcut: adopt it, then let the
+  // rules below judge it exactly as if it had been chosen here. If the selected
+  // product can't be made for that day it is cleared like any other illegal date.
+  useEffect(() => {
+    if (!initialDate) return
+    setDate(initialDate)
+    onInitialDateApplied?.()
+  }, [initialDate, onInitialDateApplied])
 
   // Lead times differ per product, so a date that was fine for Grande can be
   // inside Suprema's lead time. Switching product must not silently leave an

@@ -90,6 +90,10 @@ export function CrmDashboard() {
   // the panel so Order Detail can jump the calendar to an order's collection date,
   // and so the day stays put when you drill into an order and come back.
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
+  // Set when a day is picked on the calendar, so New Order opens with that
+  // collection date already chosen. Cleared once the form has taken it, or the
+  // date would reappear on every later visit to the screen.
+  const [prefilledDate, setPrefilledDate] = useState<Date | null>(null)
 
   const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand } =
     data
@@ -111,7 +115,20 @@ export function CrmDashboard() {
 
   function handleViewChange(nextView: DashboardView) {
     setSelectedOrderId(null)
+    setPrefilledDate(null)
     setView(nextView)
+  }
+
+  /**
+   * Jump to New Order with a collection date already picked. The form still
+   * validates it against the selected product's lead time and the calendar
+   * rules, and clears it if that product can't be made for that day — so this
+   * is a shortcut, never a way past the rules.
+   */
+  function handleScheduleForDate(date: Date) {
+    setPrefilledDate(date)
+    setSelectedOrderId(null)
+    setView("new-order")
   }
 
   async function handleNewOrder(productId: string, quantity: number, collectionDate: Date) {
@@ -144,6 +161,7 @@ export function CrmDashboard() {
     await mutate("/api/reset")
     setSelectedOrderId(null)
     setCalendarDate(new Date())
+    setPrefilledDate(null)
     setView("new-order")
   }
 
@@ -226,6 +244,8 @@ export function CrmDashboard() {
                   orders={orders}
                   variantsById={variantsById}
                   settings={calendarSettings}
+                  initialDate={prefilledDate}
+                  onInitialDateApplied={() => setPrefilledDate(null)}
                   onSubmit={handleNewOrder}
                 />
               )}
@@ -236,8 +256,10 @@ export function CrmDashboard() {
                 <ProductionCalendarPanel
                   orders={orders}
                   variantsById={variantsById}
+                  staff={staff}
                   productionDemand={productionDemand}
                   onHand={capacity}
+                  onScheduleForDate={handleScheduleForDate}
                   selectedDate={calendarDate}
                   onSelectDate={setCalendarDate}
                   onSelectOrder={setSelectedOrderId}
