@@ -66,7 +66,7 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl">
+    <form onSubmit={handleSubmit} className="mx-auto w-full @4xl:max-w-5xl">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -81,10 +81,11 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
         </CardHeader>
 
         <CardContent>
-          <FieldGroup>
+          <FieldGroup className="@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @3xl:items-start @3xl:gap-8">
             <Field>
               <FieldLabel>Days closed for collection</FieldLabel>
-              <div className="flex flex-wrap gap-2">
+              {/* Seven fixed tracks: the week reads as a week, never 6 + 1 wrapped. */}
+              <div className="grid grid-cols-7 gap-2">
                 {WEEKDAYS.map((day) => {
                   const isBlocked = blocked.includes(day.value)
                   return (
@@ -121,7 +122,7 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
               )}
             </Field>
 
-            <div className="grid gap-4 @sm:grid-cols-2">
+            <div className="grid gap-4 @sm:grid-cols-2 @3xl:grid-cols-1">
               <Field>
                 <FieldLabel htmlFor="earliest-collection">Earliest collection time</FieldLabel>
                 <Input

@@ -102,7 +102,7 @@ export function NewOrderForm({
 
   if (variants.length === 0) {
     return (
-      <Card className="max-w-2xl">
+      <Card className="mx-auto w-full max-w-2xl">
         <CardContent>
           <Empty>
             <EmptyTitle>No product recipes yet</EmptyTitle>
@@ -114,7 +114,7 @@ export function NewOrderForm({
   }
 
   return (
-    <Card className="@container max-w-2xl">
+    <Card className="@container">
       <CardHeader>
         <CardTitle>New Order</CardTitle>
         <CardDescription>
@@ -124,8 +124,8 @@ export function NewOrderForm({
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent>
-          <FieldGroup>
-            <Field>
+          <FieldGroup className="@3xl:grid @3xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] @3xl:items-start @3xl:gap-8 @6xl:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1.4fr)]">
+            <Field className="@3xl:col-start-1 @3xl:row-span-2 @6xl:row-span-1">
               <FieldLabel>Product variant</FieldLabel>
               <div role="radiogroup" aria-label="Product variant" className="grid gap-3 @sm:grid-cols-3">
                 {variants.map((variant) => {
@@ -157,25 +157,9 @@ export function NewOrderForm({
                   )
                 })}
               </div>
-              {selectedVariant && (
-                <>
-                  <FieldDescription>
-                    {selectedVariant.description} One batch makes {selectedVariant.unitsPerBatch}{" "}
-                    {selectedVariant.unitsPerBatch === 1 ? "cake" : "cakes"} and draws:
-                  </FieldDescription>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {INGREDIENT_ORDER.filter((key) => selectedVariant.requires[key]).map((key) => (
-                      <Badge key={key} variant="secondary" className="font-normal">
-                        {selectedVariant.requires[key]}
-                        {INGREDIENT_INFO[key].unit} {INGREDIENT_INFO[key].label.toLowerCase()}
-                      </Badge>
-                    ))}
-                  </div>
-                </>
-              )}
             </Field>
 
-            <div className="grid gap-4 @sm:grid-cols-2">
+            <div className="grid gap-4 @sm:grid-cols-2 @3xl:col-start-2 @3xl:row-start-1 @3xl:grid-cols-1">
               <Field>
                 <FieldLabel htmlFor={quantityId}>Quantity</FieldLabel>
                 <Input
@@ -227,10 +211,28 @@ export function NewOrderForm({
                 )}
               </Field>
             </div>
+
+            {selectedVariant && (
+              <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-4 @3xl:col-start-2 @3xl:row-start-2 @6xl:col-start-3 @6xl:row-start-1">
+                <span className="text-sm font-medium text-foreground">{selectedVariant.name}</span>
+                <FieldDescription>
+                  {selectedVariant.description} One batch makes {selectedVariant.unitsPerBatch}{" "}
+                  {selectedVariant.unitsPerBatch === 1 ? "cake" : "cakes"} and draws:
+                </FieldDescription>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {INGREDIENT_ORDER.filter((key) => selectedVariant.requires[key]).map((key) => (
+                    <Badge key={key} variant="secondary" className="font-normal">
+                      {selectedVariant.requires[key]}
+                      {INGREDIENT_INFO[key].unit} {INGREDIENT_INFO[key].label.toLowerCase()}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </FieldGroup>
         </CardContent>
-        <CardFooter>
-          <Button type="submit" disabled={!isValid} className="w-full">
+        <CardFooter className="@3xl:justify-end">
+          <Button type="submit" disabled={!isValid} className="w-full @3xl:w-auto @3xl:px-8">
             <Send data-icon="inline-start" />
             Schedule Order
           </Button>

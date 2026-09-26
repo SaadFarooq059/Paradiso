@@ -32,7 +32,7 @@ export function StockLevelsPanel({ available, capacity }: StockLevelsPanelProps)
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 @sm:grid-cols-2 @lg:grid-cols-3">
+        <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))]">
           {INGREDIENT_ORDER.map((key) => {
             const info = INGREDIENT_INFO[key]
             const initial = capacity[key] ?? 0

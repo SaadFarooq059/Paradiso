@@ -110,7 +110,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       {!editing && (
         <Button onClick={() => startEdit(null)}>
           <Plus data-icon="inline-start" />
@@ -119,7 +119,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       )}
 
       {editing && (
-        <Card>
+        <Card className="mx-auto w-full max-w-3xl">
           <CardHeader>
             <CardTitle>{editing.id ? "Edit recipe" : "New recipe"}</CardTitle>
             <CardDescription>
@@ -229,7 +229,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
         </Card>
       )}
 
-      <div className="grid gap-3 @sm:grid-cols-2">
+      <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))]">
         {variants.map((variant) => (
           <Card key={variant.id}>
             <CardContent className="flex gap-3 pt-4">

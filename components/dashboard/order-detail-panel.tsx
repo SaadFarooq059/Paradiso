@@ -44,12 +44,13 @@ export function OrderDetailPanel({
     order.status === "On Hold"
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
         <ArrowLeft data-icon="inline-start" />
         Back
       </Button>
 
+      <div className="grid gap-4 @4xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @4xl:items-start">
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
@@ -158,25 +159,34 @@ export function OrderDetailPanel({
             </div>
           )}
 
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-foreground">Lifecycle</h3>
-            <ol className="space-y-3">
-              {order.statusHistory.map((event, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                  <div className="flex flex-col">
-                    <span className="font-medium text-foreground">{event.status}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDateTime(event.at)}
-                      {event.note ? ` — ${event.note}` : ""}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
         </CardContent>
       </Card>
+
+      {/* Its own card so it can sit beside the detail on a wide screen instead
+          of pushing it further down a narrow column. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Lifecycle</CardTitle>
+          <CardDescription>Every status this order has been through.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ol className="space-y-3">
+            {order.statusHistory.map((event, i) => (
+              <li key={i} className="flex gap-3 text-sm">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground">{event.status}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDateTime(event.at)}
+                    {event.note ? ` — ${event.note}` : ""}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
+      </div>
 
       {canCancel && (
         <div className="flex flex-wrap gap-2">

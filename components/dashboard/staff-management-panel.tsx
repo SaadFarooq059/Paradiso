@@ -60,7 +60,7 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="space-y-4">
       {!editing && (
         <Button onClick={() => startEdit(null)}>
           <Plus data-icon="inline-start" />
@@ -69,7 +69,7 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
       )}
 
       {editing && (
-        <Card>
+        <Card className="mx-auto w-full max-w-2xl">
           <CardHeader>
             <CardTitle>{editing.id ? "Edit staff member" : "New staff member"}</CardTitle>
             <CardDescription>
@@ -120,7 +120,10 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
         </Card>
       )}
 
-      <div className="grid gap-3 @sm:grid-cols-2">
+      {/* The roster uses whatever width there is; the editor above it stays
+          narrow, because a form stretched across a wide monitor is worse than
+          one that is slightly too small. */}
+      <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))]">
         {staff.map((member) => (
           <Card key={member.id}>
             <CardContent className="flex items-center gap-3 pt-4">

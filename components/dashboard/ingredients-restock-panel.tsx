@@ -40,7 +40,10 @@ export function IngredientsRestockPanel({ stock, restockLog, onRestock }: Ingred
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    // Two independent cards that were stacked in a narrow column. Side by side
+    // once there is room: the form does not need to grow, and the log is what
+    // benefits from the extra space being spent sideways instead.
+    <div className="grid gap-4 @4xl:grid-cols-2 @4xl:items-start">
       <Card>
         <CardHeader>
           <CardTitle>Restock ingredients</CardTitle>
