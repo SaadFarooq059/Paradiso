@@ -19,6 +19,7 @@ import {
   UserCog,
 } from "lucide-react"
 
+import { ThemeToggle } from "@/components/dashboard/theme-toggle"
 import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar"
 import { getStaffColor } from "@/lib/mock-data"
 import type { StaffMember } from "@/lib/types"
@@ -120,7 +121,8 @@ export function SidebarNav({
           </nav>
           <PreviewNavGroup active={active} onChange={onChange} />
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
+          <ThemeToggle />
           <ResetDemoDataButton onReset={onResetDemoData} />
           <SidebarFooter staff={staff} />
         </div>

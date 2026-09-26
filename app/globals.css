@@ -126,10 +126,16 @@
 
 /*
  * The Paradiso brand palette (#3F0000 maroon on #FFF6E1 cream) is a light-mode
- * pairing — it should always be visible regardless of the visitor's OS/browser
- * dark-mode setting, so unlike a typical shadcn theme this file does NOT
- * auto-switch to .dark via prefers-color-scheme. The .dark class above still
- * works if a manual theme toggle is ever added.
+ * pairing, and light remains the theme the app is designed around — dark is a
+ * genuine alternative rather than an inverted afterthought.
+ *
+ * Switching is by the .dark class above, never by prefers-color-scheme directly:
+ * `@custom-variant dark (&:is(.dark *))` at the top of this file means every
+ * `dark:` utility keys off that class. components/theme-provider.tsx (next-themes)
+ * is what sets it, from an inline script before paint, so the first frame is
+ * already the right theme. The OS preference is still honoured — it is the
+ * default until the visitor picks a theme themselves, after which their choice
+ * wins.
  */
 
 @layer base {

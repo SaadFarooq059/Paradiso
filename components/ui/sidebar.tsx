@@ -95,7 +95,7 @@ export const SidebarBody = ({
       <div className="flex h-10 w-full flex-row items-center justify-end bg-sidebar px-4 py-4 md:hidden">
         <Menu
           aria-label="Open navigation"
-          className="cursor-pointer text-neutral-800 dark:text-neutral-200"
+          className="cursor-pointer text-sidebar-foreground"
           onClick={() => setOpen(!open)}
         />
       </div>
@@ -103,10 +103,10 @@ export const SidebarBody = ({
       <div
         className={cn(
           // Below md: an overlay drawer.
-          "fixed inset-0 z-[100] flex h-full w-full flex-col overflow-y-auto bg-white p-6 transition-transform duration-300 ease-in-out sm:p-10 dark:bg-neutral-900",
+          "fixed inset-0 z-[100] flex h-full w-full flex-col overflow-y-auto bg-sidebar p-6 transition-transform duration-300 ease-in-out sm:p-10",
           open ? "translate-x-0" : "-translate-x-full",
           // md and up: the static rail, same element.
-          "md:static md:z-auto md:translate-x-0 md:overflow-hidden md:bg-neutral-100 md:px-4 md:py-4 md:dark:bg-neutral-800",
+          "md:static md:z-auto md:translate-x-0 md:overflow-hidden md:bg-sidebar md:px-4 md:py-4",
           animate && "md:transition-[width] md:duration-300 md:ease-in-out",
           open ? "md:w-[300px]" : "md:w-[60px]",
           className
@@ -119,7 +119,7 @@ export const SidebarBody = ({
         {...props}
       >
         <div
-          className="absolute top-6 right-6 z-50 cursor-pointer text-neutral-800 sm:top-10 sm:right-10 md:hidden dark:text-neutral-200"
+          className="absolute top-6 right-6 z-50 cursor-pointer text-sidebar-foreground sm:top-10 sm:right-10 md:hidden"
           onClick={() => setOpen(false)}
         >
           <X aria-label="Close navigation" />
@@ -152,7 +152,7 @@ export const SidebarLink = ({
       {link.icon}
       <span
         className={cn(
-          "text-neutral-700 dark:text-neutral-200 text-sm group-hover/sidebar:translate-x-1 whitespace-pre !p-0 !m-0 overflow-hidden inline-block",
+          "text-sidebar-foreground text-sm group-hover/sidebar:translate-x-1 whitespace-pre !p-0 !m-0 overflow-hidden inline-block",
           animate && "transition-all duration-200",
           open ? "max-w-xs opacity-100" : "max-w-0 opacity-0"
         )}
