@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
+import { formatMoney, parseMoney } from "@/lib/payments"
 import type { IngredientKey, ProductVariant } from "@/lib/types"
 import { slugify } from "@/lib/utils"
 
@@ -26,6 +27,8 @@ type FormState = {
   servings: string
   leadTimeDays: string
   unitsPerBatch: string
+  /** Pounds and pence as typed, e.g. "28.00". Converted to pence on save. */
+  price: string
   amounts: Record<IngredientKey, string>
 }
 
@@ -42,6 +45,7 @@ function toFormState(variant: ProductVariant | null): FormState {
       servings: "",
       leadTimeDays: "2",
       unitsPerBatch: "1",
+      price: "",
       amounts: emptyAmounts(),
     }
   }
@@ -57,6 +61,7 @@ function toFormState(variant: ProductVariant | null): FormState {
     servings: variant.servings,
     leadTimeDays: String(variant.leadTimeDays),
     unitsPerBatch: String(variant.unitsPerBatch),
+    price: (variant.priceAmount / 100).toFixed(2),
     amounts,
   }
 }
@@ -91,6 +96,11 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
     const parsedYield = Number.parseInt(editing.unitsPerBatch, 10)
     if (!Number.isFinite(parsedYield) || parsedYield < 1) return
 
+    // Free is a legitimate price (a comp, a sample), so an empty field means
+    // zero rather than being rejected — but a malformed one is refused.
+    const priceAmount = editing.price.trim() === "" ? 0 : parseMoney(editing.price)
+    if (priceAmount === null) return
+
     const requires: ProductVariant["requires"] = {}
     for (const key of INGREDIENT_ORDER) {
       const parsed = Number.parseFloat(editing.amounts[key])
@@ -102,6 +112,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       name: editing.name.trim(),
       description: editing.description.trim(),
       servings: editing.servings.trim(),
+      priceAmount,
       requires,
       leadTimeDays: parsedLeadTime,
       unitsPerBatch: parsedYield,
@@ -170,6 +181,24 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   <FieldDescription>
                     How many finished cakes one batch makes. Orders for the same day are pooled and
                     rounded up to whole batches.
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="variant-price">Price</FieldLabel>
+                  <Input
+                    id="variant-price"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={editing.price}
+                    onChange={(e) => setEditing({ ...editing, price: e.target.value })}
+                  />
+                  <FieldDescription>
+                    In pounds. Order totals are worked out from this and frozen when the order is
+                    taken, so repricing never restates an existing quote.{" "}
+                    <strong className="font-medium text-foreground">
+                      The seeded prices are placeholders
+                    </strong>{" "}
+                    — the client has not supplied real ones.
                   </FieldDescription>
                 </Field>
                 <Field>

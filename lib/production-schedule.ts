@@ -22,12 +22,18 @@ import type {
  * arithmetic go wrong across daylight-saving boundaries.
  */
 
-/** Orders occupying a production day. On Hold was never scheduled; Cancelled gave its slot back. */
-const OCCUPIES_PRODUCTION_DAY: OrderStatus[] = [
+/**
+ * Orders occupying a production day. Deliberately the same set as LIVE_STATUSES
+ * in lib/stock-projection.ts: a day's order ceiling and its ingredient draw must
+ * agree about which orders are real, or one of them will let through work the
+ * other has already refused. Confirmed and both blocked states hold no slot;
+ * Cancelled gave its slot back.
+ */
+export const OCCUPIES_PRODUCTION_DAY: OrderStatus[] = [
   "Scheduled",
   "In Production",
-  "Ready",
-  "Completed",
+  "Ready for collection",
+  "Collected or delivered",
 ]
 
 /**

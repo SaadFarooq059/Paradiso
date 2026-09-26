@@ -33,8 +33,29 @@ import type {
  * draw without re-introducing the rounding.
  */
 
-/** Statuses whose units are still booked into production. */
-const LIVE_STATUSES = new Set(["Scheduled", "In Production", "Ready", "Completed"])
+/**
+ * Statuses whose units are still booked into production — the single place that
+ * decides what holds oven capacity.
+ *
+ * "Confirmed" is absent on purpose: details are agreed with the customer but the
+ * shop has not committed a production slot, and Schedule is what runs the
+ * feasibility check. "Details require clarification" and "On Hold" are both
+ * blocked, for different reasons, and neither holds capacity.
+ *
+ * "Collected or delivered" stays live because the ledger is historical: those
+ * ingredients were genuinely used, and dropping them would hand the projection
+ * capacity that does not exist.
+ *
+ * A refund never appears here. Refunding is a money event; if the cake is also
+ * not to be made, the order is cancelled, and it is the cancel that frees the
+ * ingredients.
+ */
+const LIVE_STATUSES = new Set<string>([
+  "Scheduled",
+  "In Production",
+  "Ready for collection",
+  "Collected or delivered",
+])
 
 export type StockRecord = Record<IngredientKey, number>
 
@@ -83,8 +104,9 @@ export function batchesFor(units: number, unitsPerBatch: number): number {
 type ProjectableOrder = Pick<Order, "collectionDate" | "productId" | "status" | "quantity">
 
 /**
- * Turns live orders into production lines. Orders that were never scheduled
- * (On Hold) or have been cancelled put nothing into production.
+ * Turns live orders into production lines. Orders that are only confirmed, are
+ * blocked (on stock or on the customer), or have been cancelled put nothing
+ * into production.
  */
 export function productionLinesFrom(
   orders: ProjectableOrder[],

@@ -20,9 +20,12 @@ export async function seedDatabase() {
   await prisma.$transaction(async (tx) => {
     // Children first so re-seeding a populated database is safe.
     await tx.productionAssignment.deleteMany()
+    await tx.emailMessage.deleteMany()
+    await tx.paymentEvent.deleteMany()
     await tx.orderStatusEvent.deleteMany()
     await tx.orderItem.deleteMany()
     await tx.order.deleteMany()
+    await tx.customer.deleteMany()
     await tx.restockEntry.deleteMany()
     await tx.stockLevel.deleteMany()
     await tx.recipeItem.deleteMany()
@@ -61,6 +64,7 @@ export async function seedDatabase() {
           sortOrder: index,
           leadTimeDays: variant.leadTimeDays,
           unitsPerBatch: variant.unitsPerBatch,
+          priceAmount: variant.priceAmount,
           recipeItems: {
             create: INGREDIENT_ORDER.filter((key) => variant.requires[key]).map((key) => ({
               ingredientId: ingredientIdByKey.get(key)!,
@@ -91,6 +95,9 @@ export async function seedDatabase() {
         blockedWeekdays: INITIAL_CALENDAR_SETTINGS.blockedWeekdays,
         earliestCollectionTime: INITIAL_CALENDAR_SETTINGS.earliestCollectionTime,
         maxOrdersPerProductionDay: INITIAL_CALENDAR_SETTINGS.maxOrdersPerProductionDay,
+        shopName: INITIAL_CALENDAR_SETTINGS.shopName,
+        shopAddress: INITIAL_CALENDAR_SETTINGS.shopAddress,
+        shopPhone: INITIAL_CALENDAR_SETTINGS.shopPhone,
       },
     })
   })

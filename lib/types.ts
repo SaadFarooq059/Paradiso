@@ -30,6 +30,12 @@ export interface ProductVariant {
    * recipe's lead time re-plans orders that have not been made yet.
    */
   leadTimeDays: number
+  /**
+   * PLACEHOLDER price in pence. The client has not given us real prices, the
+   * same way they had not given us batch yields. Integer pence, never a float —
+   * money must not be approximate.
+   */
+  priceAmount: number
 }
 
 /** JavaScript getDay() numbering: 0 = Sunday ... 6 = Saturday. */
@@ -46,19 +52,96 @@ export interface CalendarSettings {
   earliestCollectionTime: string
   /** Ceiling on orders sharing one production day. */
   maxOrdersPerProductionDay: number
+  /** Shop identity, used by the customer email templates. */
+  shopName: string
+  shopAddress: string
+  shopPhone: string
 }
 
 export type StaffName = string
 
 export type StaffRole = "admin" | "staff"
 
+/**
+ * Where an order is in the fulfilment lifecycle — exactly one at a time.
+ *
+ * Payment is deliberately not in here. An order can be paid *and* in
+ * production, and a refund can follow collection without un-collecting it, so
+ * money is a second independent dimension (see PaymentSummary below).
+ *
+ * Whether a status books ingredients is decided only in LIVE_STATUSES
+ * (lib/stock-projection.ts). "Confirmed" is not live: details are agreed but no
+ * oven capacity is held until Schedule runs the feasibility check.
+ */
 export type OrderStatus =
+  | "Confirmed"
   | "Scheduled"
   | "In Production"
-  | "Ready"
-  | "Completed"
+  | "Ready for collection"
+  | "Collected or delivered"
+  | "Details require clarification"
   | "On Hold"
   | "Cancelled"
+
+/** Derived from the payment ledger; never stored as a field of its own. */
+export type PaymentState =
+  | "Unpaid"
+  | "Payment received"
+  | "Partially refunded"
+  | "Refunded"
+
+export type PaymentEventKind = "Payment" | "Refund"
+
+export interface PaymentEvent {
+  id: number
+  kind: PaymentEventKind
+  /** Always positive, in pence. Direction comes from `kind`. */
+  amount: number
+  at: number
+  /** Staff id, or null for anything recorded before actors were tracked. */
+  actorId: string | null
+  actorName: string | null
+  note?: string
+}
+
+/** The money side of an order, all amounts in integer pence. */
+export interface PaymentSummary {
+  total: number
+  paid: number
+  refunded: number
+  state: PaymentState
+  events: PaymentEvent[]
+}
+
+export type EmailTemplateName =
+  | "Confirmation"
+  | "Reminder"
+  | "Ready for collection"
+  | "Follow-up"
+
+/** Nothing is sent yet; this is what would go out, and when. */
+export type EmailStatus = "Ready to send" | "Pending" | "Suppressed"
+
+export interface OrderEmail {
+  id: number
+  template: EmailTemplateName
+  status: EmailStatus
+  toName: string
+  toEmail: string
+  subject: string
+  body: string
+  renderedAt: number
+  /** When it would actually go out. Null means immediately. */
+  sendAfter: number | null
+  suppressedReason: string | null
+}
+
+export interface Customer {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+}
 
 export interface ShortageReason {
   ingredient: IngredientKey
@@ -69,6 +152,12 @@ export interface OrderStatusEvent {
   status: OrderStatus
   at: number
   note?: string
+  /**
+   * Who made the change. Null means the change predates actor tracking — which
+   * is recorded as unknown rather than attributed to anyone.
+   */
+  actorId: string | null
+  actorName: string | null
 }
 
 export interface Order {
@@ -89,6 +178,11 @@ export interface Order {
   consumedIngredients: IngredientAmounts
   statusHistory: OrderStatusEvent[]
   createdAt: number
+  /** Null for orders taken before customers existed. */
+  customer: Customer | null
+  payment: PaymentSummary
+  /** Customer messages rendered for this order, oldest first. */
+  emails: OrderEmail[]
 }
 
 export interface StaffMember {

@@ -28,8 +28,16 @@ interface NewOrderFormProps {
   initialDate?: Date | null
   /** Called once the initial date has been taken, so it is applied only once. */
   onInitialDateApplied?: () => void
-  onSubmit: (productId: string, quantity: number, collectionDate: Date) => void
+  onSubmit: (
+    productId: string,
+    quantity: number,
+    collectionDate: Date,
+    customer: { name: string; email: string; phone: string }
+  ) => void
 }
+
+/** Permissive on purpose — catches a typo, does not try to police addresses. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function NewOrderForm({
   variants,
@@ -45,6 +53,9 @@ export function NewOrderForm({
   const [quantity, setQuantity] = useState("1")
   const [date, setDate] = useState<Date | undefined>(undefined)
   const [calendarOpen, setCalendarOpen] = useState(false)
+  const [customerName, setCustomerName] = useState("")
+  const [customerEmail, setCustomerEmail] = useState("")
+  const [customerPhone, setCustomerPhone] = useState("")
 
   // Recipes can be added/edited/removed from the Recipes screen while this form is mounted —
   // fall back to the first available variant if the selected one disappears.
@@ -90,14 +101,30 @@ export function NewOrderForm({
     }
   }, [date, availability])
 
-  const isValid = productId && Number.isFinite(parsedQuantity) && parsedQuantity > 0 && !!date
+  // The customer is required: a confirmed order with nobody attached has nowhere
+  // to send the confirmation, and every message downstream is addressed from here.
+  const emailIsValid = EMAIL_SHAPE.test(customerEmail.trim())
+  const isValid =
+    productId &&
+    Number.isFinite(parsedQuantity) &&
+    parsedQuantity > 0 &&
+    !!date &&
+    customerName.trim().length > 0 &&
+    emailIsValid
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isValid || !date) return
-    onSubmit(productId, parsedQuantity, date)
+    onSubmit(productId, parsedQuantity, date, {
+      name: customerName.trim(),
+      email: customerEmail.trim(),
+      phone: customerPhone.trim(),
+    })
     setQuantity("1")
     setDate(undefined)
+    setCustomerName("")
+    setCustomerEmail("")
+    setCustomerPhone("")
   }
 
   if (variants.length === 0) {
@@ -118,8 +145,9 @@ export function NewOrderForm({
       <CardHeader>
         <CardTitle>New Order</CardTitle>
         <CardDescription>
-          Schedule a bakery order. Stock is checked against every previously scheduled order before
-          confirming.
+          Takes the order and confirms it with the customer. It does not book the kitchen yet —
+          stock is checked when you schedule it from the order&apos;s detail screen, so a confirmed
+          order holds no ingredients until then.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -160,6 +188,42 @@ export function NewOrderForm({
             </Field>
 
             <div className="grid gap-4 @sm:grid-cols-2 @3xl:col-start-2 @3xl:row-start-1 @3xl:grid-cols-1">
+              <Field className="@sm:col-span-2 @3xl:col-span-1">
+                <FieldLabel htmlFor="customer-name">Customer name</FieldLabel>
+                <Input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  autoComplete="off"
+                />
+              </Field>
+
+              <Field className="@sm:col-span-2 @3xl:col-span-1">
+                <FieldLabel htmlFor="customer-email">Customer email</FieldLabel>
+                <Input
+                  id="customer-email"
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  aria-invalid={customerEmail.trim() !== "" && !emailIsValid}
+                  autoComplete="off"
+                />
+                <FieldDescription>
+                  Where the confirmation and collection messages go. Nothing is sent yet — each
+                  message is rendered and logged on the order.
+                </FieldDescription>
+              </Field>
+
+              <Field className="@sm:col-span-2 @3xl:col-span-1">
+                <FieldLabel htmlFor="customer-phone">Phone (optional)</FieldLabel>
+                <Input
+                  id="customer-phone"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  autoComplete="off"
+                />
+              </Field>
+
               <Field>
                 <FieldLabel htmlFor={quantityId}>Quantity</FieldLabel>
                 <Input
@@ -234,7 +298,7 @@ export function NewOrderForm({
         <CardFooter className="@3xl:justify-end">
           <Button type="submit" disabled={!isValid} className="w-full @3xl:w-auto @3xl:px-8">
             <Send data-icon="inline-start" />
-            Schedule Order
+            Confirm order
           </Button>
         </CardFooter>
       </form>

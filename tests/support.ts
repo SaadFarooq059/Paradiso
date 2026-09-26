@@ -60,6 +60,24 @@ export interface DashboardState {
     assignedStaff: string | null
     shortages: { ingredient: string; shortBy: number }[]
     consumedIngredients: Record<string, number>
+    statusHistory: { status: string; at: number; note?: string; actorName: string | null }[]
+    payment: {
+      total: number
+      paid: number
+      refunded: number
+      state: string
+      events: { id: number; kind: string; amount: number }[]
+    }
+    emails: {
+      id: number
+      template: string
+      status: string
+      toEmail: string
+      subject: string
+      body: string
+      sendAfter: number | null
+      suppressedReason: string | null
+    }[]
   }[]
   productionDemand: {
     day: string
@@ -82,17 +100,65 @@ export async function readState(page: Page): Promise<DashboardState> {
   return (await response.json()) as DashboardState
 }
 
-/** Places an order straight through the API, bypassing the date picker. */
+export interface MutationReply {
+  message: string
+  tone: string
+  orderId?: string
+}
+
+/** A customer to attach orders to. Every order needs one. */
+export const TEST_CUSTOMER = {
+  customerName: "Test Customer",
+  customerEmail: "test.customer@example.com",
+  customerPhone: "020 7946 0000",
+}
+
+/**
+ * Confirms an order through the API, bypassing the date picker.
+ *
+ * Confirming no longer books the kitchen — see scheduleOrder. Most tests want
+ * an order that holds ingredients, so they use placeAndSchedule.
+ */
+export async function confirmOrder(
+  page: Page,
+  productId: string,
+  quantity: number,
+  date: Date = collectionDate()
+): Promise<MutationReply> {
+  const response = await page.request.post("/api/orders", {
+    data: { productId, quantity, collectionDate: date.toISOString(), ...TEST_CUSTOMER },
+  })
+  return (await response.json()) as MutationReply
+}
+
+/** Runs any order action: schedule, start, ready, complete, cancel, pay, refund. */
+export async function orderAction(
+  page: Page,
+  orderId: string,
+  action: string,
+  payload: Record<string, unknown> = {}
+): Promise<MutationReply> {
+  const response = await page.request.post(`/api/orders/${orderId}`, {
+    data: { action, ...payload },
+  })
+  return (await response.json()) as MutationReply
+}
+
+/**
+ * Confirm then schedule — the state most tests mean by "an order exists".
+ * Scheduling is what runs the feasibility check, so this is where an order
+ * either books its ingredients or goes On Hold.
+ */
 export async function placeOrder(
   page: Page,
   productId: string,
   quantity: number,
   date: Date = collectionDate()
-) {
-  const response = await page.request.post("/api/orders", {
-    data: { productId, quantity, collectionDate: date.toISOString() },
-  })
-  return (await response.json()) as { message: string; tone: string; orderId?: string }
+): Promise<MutationReply> {
+  const confirmed = await confirmOrder(page, productId, quantity, date)
+  if (!confirmed.orderId) return confirmed
+  const scheduled = await orderAction(page, confirmed.orderId, "schedule")
+  return { ...scheduled, orderId: confirmed.orderId }
 }
 
 /** Total committed to live orders: what is on hand minus what is still free. */

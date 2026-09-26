@@ -73,19 +73,23 @@ export interface DashboardState {
  * here, at the one boundary where rows cross into the application.
  */
 const STATUS_FROM_DB: Record<DbOrderStatus, OrderStatus> = {
+  Confirmed: "Confirmed",
   Scheduled: "Scheduled",
   InProduction: "In Production",
-  Ready: "Ready",
-  Completed: "Completed",
+  ReadyForCollection: "Ready for collection",
+  CollectedOrDelivered: "Collected or delivered",
+  AwaitingDetails: "Details require clarification",
   OnHold: "On Hold",
   Cancelled: "Cancelled",
 }
 
 const STATUS_TO_DB: Record<OrderStatus, DbOrderStatus> = {
+  Confirmed: "Confirmed",
   Scheduled: "Scheduled",
   "In Production": "InProduction",
-  Ready: "Ready",
-  Completed: "Completed",
+  "Ready for collection": "ReadyForCollection",
+  "Collected or delivered": "CollectedOrDelivered",
+  "Details require clarification": "AwaitingDetails",
   "On Hold": "OnHold",
   Cancelled: "Cancelled",
 }

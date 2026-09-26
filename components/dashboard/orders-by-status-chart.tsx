@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatDateShort, UK_LOCALE } from "@/lib/format-date"
-import { ORDER_STATUS_ORDER } from "@/lib/mock-data"
+import { ORDER_STATUS_ORDER, STATUS_SHORT_LABEL } from "@/lib/mock-data"
 import { dayKey } from "@/lib/production-schedule"
 import type { Order, OrderStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -42,10 +42,12 @@ import { cn } from "@/lib/utils"
  * valid custom property, and recharts needs a key it can use as a dataKey.
  */
 const STATUS_KEY: Record<OrderStatus, string> = {
+  Confirmed: "confirmed",
   Scheduled: "scheduled",
   "In Production": "inProduction",
-  Ready: "ready",
-  Completed: "completed",
+  "Ready for collection": "ready",
+  "Collected or delivered": "collected",
+  "Details require clarification": "awaitingDetails",
   "On Hold": "onHold",
   Cancelled: "cancelled",
 }
@@ -59,10 +61,12 @@ const STATUS_KEY: Record<OrderStatus, string> = {
  * step rather than the light one reused — the tokens carry both.
  */
 const STATUS_COLOR: Record<OrderStatus, string> = {
+  Confirmed: "var(--status-confirmed)",
   Scheduled: "var(--status-scheduled)",
   "In Production": "var(--status-in-production)",
-  Ready: "var(--status-ready)",
-  Completed: "var(--status-completed)",
+  "Ready for collection": "var(--status-ready)",
+  "Collected or delivered": "var(--status-completed)",
+  "Details require clarification": "var(--status-awaiting-details)",
   "On Hold": "var(--status-on-hold)",
   Cancelled: "var(--status-cancelled)",
 }
@@ -277,7 +281,7 @@ export function OrdersByStatusChart({ orders, className }: { orders: Order[]; cl
           </Empty>
         ) : (
           <>
-            <div className="grid gap-4 @md:grid-cols-3 @3xl:grid-cols-6">
+            <div className="grid gap-4 @md:grid-cols-4 @3xl:grid-cols-8">
               {totals.map(({ status, count }) => (
                 <div key={status} className="flex items-stretch gap-2.5">
                   <span
@@ -286,7 +290,9 @@ export function OrdersByStatusChart({ orders, className }: { orders: Order[]; cl
                     style={{ backgroundColor: count > 0 ? seriesColor(status) : "var(--color-border)" }}
                   />
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-muted-foreground">{status}</span>
+                    <span className="truncate text-xs font-medium text-muted-foreground" title={status}>
+                      {STATUS_SHORT_LABEL[status]}
+                    </span>
                     <span className="font-mono text-2xl leading-none font-semibold tabular-nums text-foreground">
                       {count}
                     </span>

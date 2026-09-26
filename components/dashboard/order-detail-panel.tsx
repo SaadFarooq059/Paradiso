@@ -1,47 +1,62 @@
 "use client"
 
 import { formatDistanceToNow } from "date-fns"
-import { ArrowLeft, CalendarRange, CheckCircle2, CookingPot, PackageCheck, RotateCcw, XCircle } from "lucide-react"
+import {
+  ArrowLeft,
+  CalendarCheck,
+  CalendarRange,
+  CheckCircle2,
+  CookingPot,
+  MessageSquareCheck,
+  MessageSquareWarning,
+  PackageCheck,
+  RotateCcw,
+  XCircle,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { OrderEmailsCard } from "@/components/dashboard/order-emails-card"
+import { OrderPaymentCard } from "@/components/dashboard/order-payment-card"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { getStaffColor, INGREDIENT_INFO, INGREDIENT_ORDER, STATUS_BADGE_CLASS } from "@/lib/mock-data"
 import { formatShortageLabel } from "@/lib/order-engine"
 import { formatDateLong, formatDateTime } from "@/lib/format-date"
-import type { Order, ProductVariant } from "@/lib/types"
+import type { Order, OrderStatus, ProductVariant } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface OrderDetailPanelProps {
   order: Order
   variant: ProductVariant | undefined
   onBack: () => void
-  onStartProduction: () => void
-  onMarkReady: () => void
-  onComplete: () => void
-  onCancel: () => void
-  onRecheck: () => void
+  onAction: (action: string, payload?: Record<string, unknown>) => void
   onViewOnCalendar: () => void
 }
+
+/** Statuses from which an order can still be stopped. A collected one cannot. */
+const CANCELLABLE_STATUSES: OrderStatus[] = [
+  "Confirmed",
+  "Scheduled",
+  "In Production",
+  "Ready for collection",
+  "Details require clarification",
+  "On Hold",
+]
+
+/** Statuses from which the customer can still be queried. */
+const QUERYABLE_STATUSES: OrderStatus[] = ["Confirmed", "Scheduled", "In Production", "On Hold"]
 
 export function OrderDetailPanel({
   order,
   variant,
   onBack,
-  onStartProduction,
-  onMarkReady,
-  onComplete,
-  onCancel,
-  onRecheck,
+  onAction,
   onViewOnCalendar,
 }: OrderDetailPanelProps) {
   const consumedEntries = INGREDIENT_ORDER.filter((key) => order.consumedIngredients[key])
-  const canCancel =
-    order.status === "Scheduled" ||
-    order.status === "In Production" ||
-    order.status === "Ready" ||
-    order.status === "On Hold"
+  const canCancel = CANCELLABLE_STATUSES.includes(order.status)
+  const canQuery = QUERYABLE_STATUSES.includes(order.status)
 
   return (
     <div className="space-y-4">
@@ -117,6 +132,28 @@ export function OrderDetailPanel({
           </div>
 
           <div className="space-y-2">
+            <h3 className="text-sm font-medium text-foreground">Customer</h3>
+            {order.customer ? (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="font-medium text-foreground">{order.customer.name}</span>
+                <a
+                  href={`mailto:${order.customer.email}`}
+                  className="text-muted-foreground underline-offset-4 hover:underline"
+                >
+                  {order.customer.email}
+                </a>
+                {order.customer.phone && (
+                  <span className="text-muted-foreground">{order.customer.phone}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No customer on this order — it was taken before customers were recorded.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
             <h3 className="text-sm font-medium text-foreground">This order&apos;s share of the batch</h3>
             {consumedEntries.length > 0 ? (
               <>
@@ -178,6 +215,10 @@ export function OrderDetailPanel({
                   <span className="font-medium text-foreground">{event.status}</span>
                   <span className="text-xs text-muted-foreground">
                     {formatDateTime(event.at)}
+                    {/* "Unknown" rather than a name or "system": changes made
+                        before actors were tracked have no author to claim. */}
+                    {" · "}
+                    {event.actorName ?? "author unknown"}
                     {event.note ? ` — ${event.note}` : ""}
                   </span>
                 </div>
@@ -188,33 +229,55 @@ export function OrderDetailPanel({
       </Card>
       </div>
 
-      {canCancel && (
+      <OrderPaymentCard order={order} canCancel={canCancel} onAction={onAction} />
+
+      <OrderEmailsCard emails={order.emails} />
+
+      {(canCancel || order.status === "Details require clarification") && (
         <div className="flex flex-wrap gap-2">
+          {order.status === "Confirmed" && (
+            <Button onClick={() => onAction("schedule")}>
+              <CalendarCheck data-icon="inline-start" />
+              Schedule
+            </Button>
+          )}
           {order.status === "On Hold" && (
-            <Button onClick={onRecheck}>
+            <Button onClick={() => onAction("recheck")}>
               <RotateCcw data-icon="inline-start" />
               Re-check stock
             </Button>
           )}
           {order.status === "Scheduled" && (
-            <Button onClick={onStartProduction}>
+            <Button onClick={() => onAction("start")}>
               <CookingPot data-icon="inline-start" />
               Start production
             </Button>
           )}
           {order.status === "In Production" && (
-            <Button onClick={onMarkReady}>
+            <Button onClick={() => onAction("ready")}>
               <PackageCheck data-icon="inline-start" />
               Mark ready
             </Button>
           )}
-          {order.status === "Ready" && (
-            <Button onClick={onComplete}>
+          {order.status === "Ready for collection" && (
+            <Button onClick={() => onAction("complete")}>
               <CheckCircle2 data-icon="inline-start" />
-              Mark completed
+              Mark collected
             </Button>
           )}
-          <Button variant="destructive" onClick={onCancel}>
+          {order.status === "Details require clarification" && (
+            <Button onClick={() => onAction("resolve")}>
+              <MessageSquareCheck data-icon="inline-start" />
+              Details clarified
+            </Button>
+          )}
+          {canQuery && (
+            <Button variant="outline" onClick={() => onAction("query")}>
+              <MessageSquareWarning data-icon="inline-start" />
+              Query details
+            </Button>
+          )}
+          <Button variant="destructive" onClick={() => onAction("cancel")}>
             <XCircle data-icon="inline-start" />
             Cancel order
           </Button>

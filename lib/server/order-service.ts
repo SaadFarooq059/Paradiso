@@ -12,9 +12,13 @@ import {
   applyEarliestCollectionTime,
   collectionDateUnavailableReason,
   dayKey,
+  OCCUPIES_PRODUCTION_DAY,
   productionDateFor,
   type UnavailableReason,
 } from "@/lib/production-schedule"
+import { ORDER_STATUS_ORDER } from "@/lib/mock-data"
+import { renderEmailsForStatus } from "@/lib/server/email-service"
+import { formatMoney } from "@/lib/payments"
 import {
   asJson,
   parseConsumed,
@@ -28,6 +32,7 @@ import type {
   Order,
   OrderStatus,
   ProductVariant,
+  StaffMember,
 } from "@/lib/types"
 
 /**
@@ -137,6 +142,7 @@ async function readVariant(tx: Tx, variantId: string): Promise<ProductVariant | 
     ),
     unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
+    priceAmount: variant.priceAmount,
   }
 }
 
@@ -153,16 +159,20 @@ async function readScheduleContext(tx: Tx) {
   const variantsById = Object.fromEntries(
     variants.map((variant) => [variant.id, { leadTimeDays: variant.leadTimeDays }])
   )
-  const shaped: Pick<Order, "collectionDate" | "productId" | "status">[] = orders.map((order) => ({
-    collectionDate: order.collectionDate,
-    productId: order.items[0]?.variantId ?? "",
-    status: toAppStatus(order.status),
-  }))
+  // `id` is carried so a caller can exclude the order it is about to move —
+  // scheduling an order must not count that order against its own day ceiling.
+  const shaped: (Pick<Order, "collectionDate" | "productId" | "status"> & { id: string })[] =
+    orders.map((order) => ({
+      id: order.id,
+      collectionDate: order.collectionDate,
+      productId: order.items[0]?.variantId ?? "",
+      status: toAppStatus(order.status),
+    }))
   return { orders: shaped, variantsById }
 }
 
 function isKnownStatus(value: string): boolean {
-  return CANCELLABLE.includes(value as OrderStatus) || value === "Completed" || value === "Cancelled"
+  return ORDER_STATUS_ORDER.includes(value as OrderStatus)
 }
 
 const UNAVAILABLE_MESSAGE: Record<UnavailableReason, string> = {
@@ -220,7 +230,7 @@ async function productionDayLoadByStaff(tx: Tx, productionDate: Date): Promise<M
   for (const assignment of assignments) {
     const order = assignment.order
     const status = toAppStatus(order.status)
-    if (status === "Cancelled" || status === "On Hold") continue
+    if (!OCCUPIES_PRODUCTION_DAY.includes(status)) continue
     const line = order.items[0]
     if (!line) continue
     const producedOn = productionDateFor(order.collectionDate, line.variant.leadTimeDays)
@@ -239,10 +249,26 @@ export interface MutationResult {
   orderId?: string
 }
 
+export interface CustomerDetails {
+  name: string
+  email: string
+  phone?: string | null
+}
+
+/**
+ * Takes an order and confirms it. Deliberately does NOT hold oven capacity.
+ *
+ * The collection date is still validated against the calendar rules, because an
+ * unofferable date is wrong the moment it is agreed. Stock is not checked and no
+ * staff member is assigned: that is what Schedule does, and until it runs a
+ * confirmed order contributes nothing to any production day.
+ */
 export async function createOrder(
   productId: string,
   quantity: number,
-  collectionDate: Date
+  collectionDate: Date,
+  customer: CustomerDetails,
+  actor: StaffMember | null = null
 ): Promise<MutationResult> {
   const result = await prisma.$transaction(async (tx) => {
     const variant = await readVariant(tx, productId)
@@ -265,68 +291,46 @@ export async function createOrder(
 
     // Stored as a real moment, opening time included, rather than midnight.
     const collectionAt = applyEarliestCollectionTime(collectionDate, settings.earliestCollectionTime)
-    const productionDate = productionDateFor(collectionDate, variant.leadTimeDays)
 
-    // Feasibility asks whether the whole schedule still works once this order's
-    // units are batched in — not whether today's total is big enough, and not
-    // against a fixed per-unit amount. Re-batching is what lets an order slot
-    // into surplus a batch was already going to produce and cost nothing.
-    const onHand = await readOnHand(tx)
-    const { lines, batchable } = await readProductionContext(tx)
-    const candidate = { variantId: productId, units: quantity, productionDate }
-    const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
-    // This order's share of its batch: the batch recipe over the batch's yield,
-    // times the units ordered. Depends only on the recipe and this order, so a
-    // later order joining the same batch never rewrites it.
-    const needed = perUnitShare(variant, quantity)
+    // The customer is matched on email so a repeat order attaches to the same
+    // record rather than creating a duplicate. Name and phone are refreshed from
+    // what was just given, because the latest is the most likely to be current.
+    const email = customer.email.trim().toLowerCase()
+    const existing = await tx.customer.findFirst({ where: { email } })
+    const customerRow = existing
+      ? await tx.customer.update({
+          where: { id: existing.id },
+          data: { name: customer.name.trim(), phone: customer.phone?.trim() || null },
+        })
+      : await tx.customer.create({
+          data: { name: customer.name.trim(), email, phone: customer.phone?.trim() || null },
+        })
 
-    if (shortages.length === 0) {
-      const assignee = await pickStaff(tx, productionDate)
-      if (!assignee) {
-        return {
-          message: "Can't schedule — there's no staff to assign. Add staff in Staff Management.",
-          tone: "error" as const,
-        }
-      }
-
-      // No stock write: the order's snapshot below IS the demand, and the
-      // projection reads it from there.
-      await tx.staff.update({
-        where: { id: assignee.id },
-        data: { orderCount: { increment: 1 } },
-      })
-
-      const order = await tx.order.create({
-        data: {
-          collectionDate: collectionAt,
-          status: toDbStatus("Scheduled"),
-          consumedIngredients: needed,
-          shortages: [],
-          items: { create: { variantId: productId, quantity } },
-          statusHistory: { create: { status: toDbStatus("Scheduled") } },
-          assignment: { create: { staffId: assignee.id } },
-        },
-      })
-      return {
-        message: `Order scheduled and assigned to ${assignee.name}`,
-        tone: "success" as const,
-        orderId: order.id,
-      }
-    }
+    // Frozen from the variant's price, exactly as consumedIngredients freezes
+    // the recipe: repricing a product later must not restate what this customer
+    // was quoted.
+    const totalAmount = variant.priceAmount * quantity
 
     const order = await tx.order.create({
       data: {
         collectionDate: collectionAt,
-        status: toDbStatus("On Hold"),
+        status: toDbStatus("Confirmed"),
         consumedIngredients: {},
-        shortages: asJson(shortages),
+        shortages: [],
+        totalAmount,
+        customerId: customerRow.id,
         items: { create: { variantId: productId, quantity } },
-        statusHistory: { create: { status: toDbStatus("On Hold") } },
+        statusHistory: {
+          create: { status: toDbStatus("Confirmed"), actorId: actor?.id ?? null },
+        },
       },
     })
+
+    await renderEmailsForStatus(tx, order.id, "Confirmed")
+
     return {
-      message: "Order put on hold — insufficient stock",
-      tone: "warning" as const,
+      message: "Order confirmed — schedule it to book the kitchen",
+      tone: "success" as const,
       orderId: order.id,
     }
   })
@@ -334,7 +338,113 @@ export async function createOrder(
   return { ...result, state: await loadDashboardState() }
 }
 
-export async function recheckOrder(orderId: string): Promise<MutationResult> {
+/**
+ * Confirmed -> Scheduled. This is where oven capacity is first claimed, so it
+ * runs the full feasibility check that createOrder no longer does: if the
+ * schedule cannot absorb these units the order goes On Hold with its shortages,
+ * exactly as an over-committed order always has.
+ */
+export async function scheduleOrder(
+  orderId: string,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } })
+    if (!order || toAppStatus(order.status) !== "Confirmed") {
+      return { message: "Only a confirmed order can be scheduled.", tone: "error" as const }
+    }
+
+    const item = order.items[0]
+    const variant = item ? await readVariant(tx, item.variantId) : null
+    if (!variant || !item) {
+      return { message: "That order's product is no longer available.", tone: "error" as const }
+    }
+
+    // Re-validated, not just re-costed. An order can sit Confirmed long enough
+    // for its collection date to fall inside the lead time or onto a day the
+    // shop has since closed.
+    const settings = await readCalendarSettings(tx)
+    const { orders: existingOrders, variantsById } = await readScheduleContext(tx)
+    const unavailable = collectionDateUnavailableReason(order.collectionDate, {
+      variant,
+      settings,
+      orders: existingOrders.filter((other) => other.id !== orderId),
+      variantsById,
+    })
+    if (unavailable) {
+      return { message: UNAVAILABLE_MESSAGE[unavailable], tone: "error" as const }
+    }
+
+    const productionDate = productionDateFor(order.collectionDate, variant.leadTimeDays)
+    const onHand = await readOnHand(tx)
+    const { lines, batchable } = await readProductionContext(tx)
+    const candidate = { variantId: item.variantId, units: item.quantity, productionDate }
+    const shortages = shortagesAfterAdding(onHand, lines, batchable, candidate)
+
+    if (shortages.length > 0) {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: toDbStatus("On Hold"),
+          shortages: asJson(shortages),
+          statusHistory: {
+            create: {
+              status: toDbStatus("On Hold"),
+              note: "Couldn't schedule — insufficient stock",
+              actorId: actor?.id ?? null,
+            },
+          },
+        },
+      })
+      return { message: "Order put on hold — insufficient stock", tone: "warning" as const }
+    }
+
+    const assignee = await pickStaff(tx, productionDate)
+    if (!assignee) {
+      return {
+        message: "Can't schedule — there's no staff to assign. Add staff in Staff Management.",
+        tone: "error" as const,
+      }
+    }
+
+    await tx.staff.update({ where: { id: assignee.id }, data: { orderCount: { increment: 1 } } })
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: toDbStatus("Scheduled"),
+        // The snapshot is written here, not at confirmation: it records what the
+        // order draws once it is genuinely booked into a batch.
+        consumedIngredients: perUnitShare(variant, item.quantity),
+        shortages: [],
+        statusHistory: {
+          create: { status: toDbStatus("Scheduled"), actorId: actor?.id ?? null },
+        },
+        // Upsert, not create: an order can reach Scheduled more than once —
+        // query it, clarify, schedule again — and ProductionAssignment.orderId
+        // is unique, so a second create violates the relation. Re-assigning
+        // clears releasedAt so the row counts toward workload again. Same shape
+        // recheckOrder already uses.
+        assignment: {
+          upsert: {
+            create: { staffId: assignee.id },
+            update: { staffId: assignee.id, assignedAt: new Date(), releasedAt: null },
+          },
+        },
+      },
+    })
+
+    await renderEmailsForStatus(tx, orderId, "Scheduled")
+
+    return { message: `Order scheduled and assigned to ${assignee.name}`, tone: "success" as const }
+  })
+
+  return { ...result, state: await loadDashboardState() }
+}
+
+export async function recheckOrder(
+  orderId: string,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } })
     if (!order || toAppStatus(order.status) !== "On Hold") {
@@ -371,6 +481,7 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
         data: {
           statusHistory: {
             create: {
+              actorId: actor?.id ?? null,
               status: toDbStatus("On Hold"),
               note: `Re-checked — ${UNAVAILABLE_NOTE[unavailable]}`,
             },
@@ -390,7 +501,7 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
         data: {
           shortages: asJson(shortages),
           statusHistory: {
-            create: { status: toDbStatus("On Hold"), note: "Re-checked — still short" },
+            create: { status: toDbStatus("On Hold"), note: "Re-checked — still short", actorId: actor?.id ?? null },
           },
         },
       })
@@ -417,7 +528,7 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
         shortages: [],
         consumedIngredients: needed,
         statusHistory: {
-          create: { status: toDbStatus("Scheduled"), note: "Re-checked and scheduled" },
+          create: { status: toDbStatus("Scheduled"), note: "Re-checked and scheduled", actorId: actor?.id ?? null },
         },
         assignment: {
           upsert: {
@@ -427,19 +538,38 @@ export async function recheckOrder(orderId: string): Promise<MutationResult> {
         },
       },
     })
+    await renderEmailsForStatus(tx, orderId, "Scheduled")
+
     return { message: `Order re-checked and scheduled — assigned to ${assignee.name}`, tone: "success" as const }
   })
 
   return { ...result, state: await loadDashboardState() }
 }
 
+/**
+ * Straight-line lifecycle moves. `schedule` is the one that matters: it is where
+ * a confirmed order first asks for oven capacity, so it does not live here — it
+ * has to run the full feasibility check and is handled by scheduleOrder below.
+ */
 const FORWARD_TRANSITIONS: Record<string, { from: OrderStatus; to: OrderStatus; message: string }> = {
   start: { from: "Scheduled", to: "In Production", message: "Order moved to production" },
-  ready: { from: "In Production", to: "Ready", message: "Order marked ready" },
-  complete: { from: "Ready", to: "Completed", message: "Order marked completed" },
+  ready: {
+    from: "In Production",
+    to: "Ready for collection",
+    message: "Order ready for collection",
+  },
+  complete: {
+    from: "Ready for collection",
+    to: "Collected or delivered",
+    message: "Order marked collected",
+  },
 }
 
-export async function advanceOrder(orderId: string, action: string): Promise<MutationResult> {
+export async function advanceOrder(
+  orderId: string,
+  action: string,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
   const transition = FORWARD_TRANSITIONS[action]
   if (!transition) {
     return { state: await loadDashboardState(), message: "Unknown action.", tone: "error" }
@@ -456,18 +586,60 @@ export async function advanceOrder(orderId: string, action: string): Promise<Mut
       where: { id: orderId },
       data: {
         status: toDbStatus(transition.to),
-        statusHistory: { create: { status: toDbStatus(transition.to) } },
+        statusHistory: {
+          create: { status: toDbStatus(transition.to), actorId: actor?.id ?? null },
+        },
       },
     })
+    await renderEmailsForStatus(tx, orderId, transition.to)
+
     return { message: transition.message, tone: "success" as const }
   })
 
   return { ...result, state: await loadDashboardState() }
 }
 
-const CANCELLABLE: OrderStatus[] = ["Scheduled", "In Production", "Ready", "On Hold"]
+/**
+ * Hands a production slot back. Decrements the workload counter so round-robin
+ * reflects current load; the assignment row itself stays, because Order Detail
+ * still shows who had it.
+ *
+ * Shared by cancelling and by querying an order: both stop the work, so both
+ * must stop counting it. Idempotent — an already-released assignment is left
+ * alone rather than decremented twice.
+ */
+async function releaseAssignment(
+  tx: Tx,
+  orderId: string,
+  assignment: { staffId: string; releasedAt: Date | null } | null
+) {
+  if (!assignment || assignment.releasedAt) return
+  await tx.staff.update({
+    where: { id: assignment.staffId },
+    data: { orderCount: { decrement: 1 } },
+  })
+  await tx.productionAssignment.update({ where: { orderId }, data: { releasedAt: new Date() } })
+  // Clamp: a counter must never go negative even if rows were edited directly.
+  await tx.staff.updateMany({ where: { orderCount: { lt: 0 } }, data: { orderCount: 0 } })
+}
 
-export async function cancelOrder(orderId: string): Promise<MutationResult> {
+/**
+ * A collected order is not cancellable — the cake has gone. Refunding one is a
+ * money event and leaves the status alone (see recordRefund).
+ */
+const CANCELLABLE: OrderStatus[] = [
+  "Confirmed",
+  "Scheduled",
+  "In Production",
+  "Ready for collection",
+  "Details require clarification",
+  "On Hold",
+]
+
+export async function cancelOrder(
+  orderId: string,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -485,28 +657,17 @@ export async function cancelOrder(orderId: string): Promise<MutationResult> {
     const consumed = parseConsumed(order.consumedIngredients)
     const hadConsumedStock = Object.keys(consumed).length > 0
 
-    // Releasing the assignment decrements the workload counter so round-robin
-    // reflects current load; the row itself stays for the audit trail.
-    if (order.assignment && !order.assignment.releasedAt) {
-      await tx.staff.update({
-        where: { id: order.assignment.staffId },
-        data: { orderCount: { decrement: 1 } },
-      })
-      await tx.productionAssignment.update({
-        where: { orderId },
-        data: { releasedAt: new Date() },
-      })
-      // Clamp: a counter must never go negative even if rows were edited directly.
-      await tx.staff.updateMany({ where: { orderCount: { lt: 0 } }, data: { orderCount: 0 } })
-    }
+    await releaseAssignment(tx, orderId, order.assignment)
 
     await tx.order.update({
       where: { id: orderId },
       data: {
         status: toDbStatus("Cancelled"),
-        statusHistory: { create: { status: toDbStatus("Cancelled") } },
+        statusHistory: { create: { status: toDbStatus("Cancelled"), actorId: actor?.id ?? null } },
       },
     })
+
+    await renderEmailsForStatus(tx, orderId, "Cancelled")
 
     return {
       message: hadConsumedStock
@@ -541,4 +702,204 @@ export async function restockIngredient(
   })
 
   return { ...result, state: await loadDashboardState() }
+}
+
+/* ------------------------------------------------------------ clarification */
+
+/**
+ * Statuses an order can be queried from. A collected or cancelled order is
+ * finished; querying it would imply work that is no longer pending.
+ */
+const QUERYABLE: OrderStatus[] = ["Confirmed", "Scheduled", "In Production", "On Hold"]
+
+/**
+ * Park an order on the customer. This releases oven capacity, because
+ * "Details require clarification" is not a live status — which is the point:
+ * the kitchen should not be holding ingredients for an order nobody can make
+ * yet. Resolving it returns to Confirmed, and Schedule re-runs feasibility.
+ */
+export async function queryOrder(
+  orderId: string,
+  note: string | null,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { assignment: true },
+    })
+    if (!order || !QUERYABLE.includes(toAppStatus(order.status))) {
+      return { message: "That order can't be queried.", tone: "error" as const }
+    }
+
+    // It is giving up its slot, so the assignment is released the same way a
+    // cancellation releases it — otherwise the round-robin keeps counting work
+    // that is not happening.
+    await releaseAssignment(tx, orderId, order.assignment)
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: toDbStatus("Details require clarification"),
+        shortages: [],
+        statusHistory: {
+          create: {
+            status: toDbStatus("Details require clarification"),
+            note: note?.trim() || null,
+            actorId: actor?.id ?? null,
+          },
+        },
+      },
+    })
+    return { message: "Order held — details require clarification", tone: "warning" as const }
+  })
+
+  return { ...result, state: await loadDashboardState() }
+}
+
+/** Details sorted: back to Confirmed, where Schedule can claim capacity again. */
+export async function resolveOrderQuery(
+  orderId: string,
+  actor: StaffMember | null = null
+): Promise<MutationResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId } })
+    if (!order || toAppStatus(order.status) !== "Details require clarification") {
+      return { message: "That order has no open query.", tone: "error" as const }
+    }
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: toDbStatus("Confirmed"),
+        statusHistory: {
+          create: {
+            status: toDbStatus("Confirmed"),
+            note: "Details clarified",
+            actorId: actor?.id ?? null,
+          },
+        },
+      },
+    })
+    return { message: "Details clarified — schedule it to book the kitchen", tone: "success" as const }
+  })
+
+  return { ...result, state: await loadDashboardState() }
+}
+
+/* ------------------------------------------------------------------- money */
+
+/**
+ * Records money in or out and re-derives the order's running totals from the
+ * ledger.
+ *
+ * The totals on the order are a cache of the events, never set by hand: summing
+ * them here in one place is what stops amountPaid and the ledger disagreeing.
+ * Nothing about a payment or a refund touches order status or stock — a refund
+ * is a money event, and if the cake is also not to be made the order is
+ * cancelled, which is what frees the ingredients.
+ */
+async function recordMoney(
+  tx: Tx,
+  orderId: string,
+  kind: "Payment" | "Refund",
+  amount: number,
+  actor: StaffMember | null,
+  note?: string | null
+) {
+  await tx.paymentEvent.create({
+    data: { orderId, kind, amount, actorId: actor?.id ?? null, note: note?.trim() || null },
+  })
+  const events = await tx.paymentEvent.findMany({ where: { orderId } })
+  const paid = events.filter((e) => e.kind === "Payment").reduce((sum, e) => sum + e.amount, 0)
+  const refunded = events.filter((e) => e.kind === "Refund").reduce((sum, e) => sum + e.amount, 0)
+  await tx.order.update({ where: { id: orderId }, data: { amountPaid: paid, amountRefunded: refunded } })
+}
+
+/** Amounts arrive as pence and must be whole, positive and not absurd. */
+function invalidAmount(amount: number): string | null {
+  if (!Number.isInteger(amount)) return "Amount must be a whole number of pence."
+  if (amount <= 0) return "Amount must be more than zero."
+  return null
+}
+
+export async function recordPayment(
+  orderId: string,
+  amount: number,
+  actor: StaffMember | null = null,
+  note?: string | null
+): Promise<MutationResult> {
+  const invalid = invalidAmount(amount)
+  if (invalid) return { state: await loadDashboardState(), message: invalid, tone: "error" }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId } })
+    if (!order) return { message: "Unknown order.", tone: "error" as const }
+    if (order.amountPaid + amount > order.totalAmount) {
+      return {
+        message: "That would take the order over its total. Record a smaller payment.",
+        tone: "error" as const,
+      }
+    }
+    await recordMoney(tx, orderId, "Payment", amount, actor, note)
+    return { message: `Payment of ${formatMoney(amount)} recorded`, tone: "success" as const }
+  })
+
+  return { ...result, state: await loadDashboardState() }
+}
+
+export async function recordRefund(
+  orderId: string,
+  amount: number,
+  actor: StaffMember | null = null,
+  note?: string | null
+): Promise<MutationResult> {
+  const invalid = invalidAmount(amount)
+  if (invalid) return { state: await loadDashboardState(), message: invalid, tone: "error" }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId } })
+    if (!order) return { message: "Unknown order.", tone: "error" as const }
+    // You cannot refund more than came in. Without this, amountRefunded could
+    // exceed amountPaid and the derived state would read "Refunded" for an order
+    // that was never fully paid.
+    if (order.amountRefunded + amount > order.amountPaid) {
+      return {
+        message: "That's more than has been paid on this order.",
+        tone: "error" as const,
+      }
+    }
+    await recordMoney(tx, orderId, "Refund", amount, actor, note)
+    return { message: `Refund of ${formatMoney(amount)} recorded`, tone: "success" as const }
+  })
+
+  return { ...result, state: await loadDashboardState() }
+}
+
+/**
+ * The common case, as one action: stop making it and give the money back.
+ *
+ * Two events are recorded, not one. The cancel is what releases the ingredients;
+ * the refund only moves money. Keeping them separate in the history is what lets
+ * a refund on a collected order — where no ingredients come back — be recorded
+ * by the same ledger without pretending the order was un-collected.
+ */
+export async function cancelAndRefundOrder(
+  orderId: string,
+  amount: number,
+  actor: StaffMember | null = null,
+  note?: string | null
+): Promise<MutationResult> {
+  const cancelled = await cancelOrder(orderId, actor)
+  if (cancelled.tone === "error") return cancelled
+  const refunded = await recordRefund(orderId, amount, actor, note)
+  if (refunded.tone === "error") {
+    // The cancel stands — it is correct on its own, and silently reversing it
+    // would leave the kitchen holding an order the operator has stopped.
+    return {
+      ...refunded,
+      message: `Order cancelled, but the refund was not recorded: ${refunded.message}`,
+      tone: "warning",
+    }
+  }
+  return { ...refunded, message: `Order cancelled and ${formatMoney(amount)} refunded` }
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import type { $Enums } from "@prisma/client"
 import {
   demandByProductionDay,
   productionLinesFrom,
@@ -7,7 +8,18 @@ import {
   type StockRecord,
 } from "@/lib/stock-projection"
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
+import { paymentStateOf } from "@/lib/payments"
+import { TEMPLATE_FROM_DB } from "@/lib/server/email-service"
+
+/** Enum member to the label the app displays, same boundary as OrderStatus. */
+const EMAIL_STATUS_FROM_DB: Record<$Enums.EmailStatus, EmailStatus> = {
+  ReadyToSend: "Ready to send",
+  Pending: "Pending",
+  Suppressed: "Suppressed",
+}
 import type {
+  EmailStatus,
+  PaymentEventKind,
   CalendarSettings,
   IngredientKey,
   Order,
@@ -41,6 +53,9 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
     blockedWeekdays: row.blockedWeekdays as CalendarSettings["blockedWeekdays"],
     earliestCollectionTime: row.earliestCollectionTime,
     maxOrdersPerProductionDay: row.maxOrdersPerProductionDay,
+    shopName: row.shopName,
+    shopAddress: row.shopAddress,
+    shopPhone: row.shopPhone,
   }
 }
 
@@ -64,7 +79,10 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       orderBy: { createdAt: "desc" },
       include: {
         items: true,
-        statusHistory: { orderBy: { at: "asc" } },
+        customer: true,
+        statusHistory: { orderBy: { at: "asc" }, include: { actor: true } },
+        payments: { orderBy: { at: "asc" }, include: { actor: true } },
+        emails: { orderBy: { renderedAt: "asc" } },
         assignment: { include: { staff: true } },
       },
     }),
@@ -87,6 +105,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     ),
     unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
+    priceAmount: variant.priceAmount,
   }))
 
   const serializedStaff: StaffMember[] = staff.map((member) => ({
@@ -114,8 +133,47 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
         status: toAppStatus(event.status),
         at: event.at.getTime(),
         note: event.note ?? undefined,
+        // Null rather than a placeholder name: a change made before actors were
+        // tracked has an unknown author, and saying so is the honest reading.
+        actorId: event.actorId,
+        actorName: event.actor?.name ?? null,
       })),
       createdAt: order.createdAt.getTime(),
+      customer: order.customer
+        ? {
+            id: order.customer.id,
+            name: order.customer.name,
+            email: order.customer.email,
+            phone: order.customer.phone,
+          }
+        : null,
+      emails: order.emails.map((email) => ({
+        id: email.id,
+        template: TEMPLATE_FROM_DB[email.template],
+        status: EMAIL_STATUS_FROM_DB[email.status],
+        toName: email.toName,
+        toEmail: email.toEmail,
+        subject: email.subject,
+        body: email.body,
+        renderedAt: email.renderedAt.getTime(),
+        sendAfter: email.sendAfter?.getTime() ?? null,
+        suppressedReason: email.suppressedReason,
+      })),
+      payment: {
+        total: order.totalAmount,
+        paid: order.amountPaid,
+        refunded: order.amountRefunded,
+        state: paymentStateOf(order.totalAmount, order.amountPaid, order.amountRefunded),
+        events: order.payments.map((event) => ({
+          id: event.id,
+          kind: event.kind as PaymentEventKind,
+          amount: event.amount,
+          at: event.at.getTime(),
+          actorId: event.actorId,
+          actorName: event.actor?.name ?? null,
+          note: event.note ?? undefined,
+        })),
+      },
     } satisfies SerializedOrder
   })
 

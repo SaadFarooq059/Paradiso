@@ -1,12 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CalendarCog } from "lucide-react"
+import { CalendarCog, Store } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import type { CalendarSettings, Weekday } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +35,9 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
   const [blocked, setBlocked] = useState<Weekday[]>(settings.blockedWeekdays)
   const [earliest, setEarliest] = useState(settings.earliestCollectionTime)
   const [maxOrders, setMaxOrders] = useState(String(settings.maxOrdersPerProductionDay))
+  const [shopName, setShopName] = useState(settings.shopName)
+  const [shopAddress, setShopAddress] = useState(settings.shopAddress)
+  const [shopPhone, setShopPhone] = useState(settings.shopPhone)
 
   // Adopt whatever the server last confirmed, so a save (or another admin's
   // change arriving with a refresh) is reflected rather than silently overwritten
@@ -42,6 +46,9 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
     setBlocked(settings.blockedWeekdays)
     setEarliest(settings.earliestCollectionTime)
     setMaxOrders(String(settings.maxOrdersPerProductionDay))
+    setShopName(settings.shopName)
+    setShopAddress(settings.shopAddress)
+    setShopPhone(settings.shopPhone)
   }, [settings])
 
   const parsedMax = Number.parseInt(maxOrders, 10)
@@ -49,7 +56,9 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
   const maxIsValid = Number.isFinite(parsedMax) && parsedMax >= 1
   // Blocking every day would leave no collection date selectable anywhere.
   const daysAreValid = blocked.length < 7
-  const isValid = timeIsValid && maxIsValid && daysAreValid
+  // The shop's name goes out in every customer email, so it cannot be blank.
+  const nameIsValid = shopName.trim().length > 0
+  const isValid = timeIsValid && maxIsValid && daysAreValid && nameIsValid
 
   function toggleDay(day: Weekday) {
     setBlocked((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
@@ -62,6 +71,9 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
       blockedWeekdays: [...blocked].sort((a, b) => a - b),
       earliestCollectionTime: earliest,
       maxOrdersPerProductionDay: parsedMax,
+      shopName: shopName.trim(),
+      shopAddress: shopAddress.trim(),
+      shopPhone: shopPhone.trim(),
     })
   }
 
@@ -157,12 +169,68 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
           </FieldGroup>
         </CardContent>
 
-        <CardFooter>
-          <Button type="submit" disabled={!isValid}>
-            Save calendar rules
-          </Button>
-        </CardFooter>
       </Card>
+
+      {/* Separate card: these are not scheduling rules, they are what the shop
+          calls itself in the messages it sends. Here rather than hardcoded in a
+          template so changing the phone number does not need a deploy. */}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Store className="size-4 shrink-0 text-muted-foreground" />
+            Shop details
+          </CardTitle>
+          <CardDescription>
+            Used in the confirmation, reminder and collection emails customers receive. Nothing is
+            sent yet — the messages are rendered and logged on each order.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup className="@3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @3xl:items-start @3xl:gap-8">
+            <Field>
+              <FieldLabel htmlFor="shop-name">Shop name</FieldLabel>
+              <Input
+                id="shop-name"
+                value={shopName}
+                onChange={(e) => setShopName(e.target.value)}
+                aria-invalid={!nameIsValid}
+              />
+              <FieldDescription>Appears as the sender and in every message body.</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="shop-phone">Phone</FieldLabel>
+              <Input
+                id="shop-phone"
+                value={shopPhone}
+                onChange={(e) => setShopPhone(e.target.value)}
+              />
+              <FieldDescription>Given to customers who need to change an order.</FieldDescription>
+            </Field>
+
+            <Field className="@3xl:col-span-2">
+              <FieldLabel htmlFor="shop-address">Collection address</FieldLabel>
+              <Textarea
+                id="shop-address"
+                rows={2}
+                value={shopAddress}
+                onChange={(e) => setShopAddress(e.target.value)}
+              />
+              <FieldDescription>
+                Where customers come to collect. Included in the ready-for-collection email.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
+
+      {/* Below both cards, because one submit saves both. Inside the first one
+          it read as though it only applied to the calendar rules. */}
+      <div className="mt-4 flex justify-end">
+        <Button type="submit" disabled={!isValid}>
+          Save settings
+        </Button>
+      </div>
     </form>
   )
 }

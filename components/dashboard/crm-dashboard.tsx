@@ -28,7 +28,7 @@ const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff", "calen
 const VIEW_META: Record<DashboardView, { title: string; description: string }> = {
   "new-order": {
     title: "New Order",
-    description: "Schedule a new order and check it against live ingredient stock.",
+    description: "Take an order and confirm it. Scheduling it books the kitchen.",
   },
   orders: {
     title: "Orders",
@@ -131,9 +131,21 @@ export function CrmDashboard() {
     setView("new-order")
   }
 
-  async function handleNewOrder(productId: string, quantity: number, collectionDate: Date) {
+  async function handleNewOrder(
+    productId: string,
+    quantity: number,
+    collectionDate: Date,
+    customer: { name: string; email: string; phone: string }
+  ) {
     const orderId = await mutate("/api/orders", {
-      body: JSON.stringify({ productId, quantity, collectionDate: collectionDate.toISOString() }),
+      body: JSON.stringify({
+        productId,
+        quantity,
+        collectionDate: collectionDate.toISOString(),
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerPhone: customer.phone,
+      }),
     })
     if (!orderId) return
     // Drop straight into the new order's detail view, with Orders as the screen
@@ -142,8 +154,14 @@ export function CrmDashboard() {
     setSelectedOrderId(orderId)
   }
 
-  function orderAction(orderId: string, action: string) {
-    return mutate(`/api/orders/${orderId}`, { body: JSON.stringify({ action }) })
+  /**
+   * One door to every order mutation. The lifecycle now has eight statuses and
+   * three money actions; a callback prop per action would be a dozen of them
+   * threaded through Order Detail for no gain, when the server already
+   * distinguishes them by name.
+   */
+  function orderAction(orderId: string, action: string, payload?: Record<string, unknown>) {
+    return mutate(`/api/orders/${orderId}`, { body: JSON.stringify({ action, ...payload }) })
   }
 
   /** Jumps the Production Calendar to an order's collection date and shows that day. */
@@ -229,11 +247,7 @@ export function CrmDashboard() {
               order={selectedOrder}
               variant={variantsById[selectedOrder.productId]}
               onBack={() => setSelectedOrderId(null)}
-              onStartProduction={() => void orderAction(selectedOrder.id, "start")}
-              onMarkReady={() => void orderAction(selectedOrder.id, "ready")}
-              onComplete={() => void orderAction(selectedOrder.id, "complete")}
-              onCancel={() => void orderAction(selectedOrder.id, "cancel")}
-              onRecheck={() => void orderAction(selectedOrder.id, "recheck")}
+              onAction={(action, payload) => void orderAction(selectedOrder.id, action, payload)}
               onViewOnCalendar={() => handleViewOnCalendar(selectedOrder.collectionDate)}
             />
           ) : (

@@ -30,10 +30,21 @@ async function pickCollectionDate(page: Page, date: Date) {
   await page.locator(`[data-day="${dayAttribute(date)}"]`).click()
 }
 
+/**
+ * Confirms an order through the form, then schedules it from Order Detail.
+ *
+ * Two steps now, not one: confirming agrees the order with the customer and
+ * holds no oven capacity, and Schedule is what runs the feasibility check. The
+ * stock assertions below are about what scheduling books, so both have to run.
+ */
 async function submitOrder(page: Page, productName: string, quantity: number) {
   await page.getByRole("radio", { name: new RegExp(`^${productName}`) }).click()
 
   await page.locator('input[type="number"]').fill(String(quantity))
+
+  // The customer is required — without it the submit button stays disabled.
+  await page.getByLabel("Customer name").fill("Test Customer")
+  await page.getByLabel("Customer email").fill("test.customer@example.com")
 
   await pickCollectionDate(page, collectionDate())
 
@@ -47,9 +58,18 @@ async function submitOrder(page: Page, productName: string, quantity: number) {
       (response) =>
         response.url().includes("/api/orders") && response.request().method() === "POST"
     ),
-    page.getByRole("button", { name: "Schedule Order" }).click(),
+    page.getByRole("button", { name: "Confirm order" }).click(),
   ])
   await expect(page.getByRole("heading", { name: "Order Detail" })).toBeVisible()
+
+  // Confirmed holds nothing; Schedule is what books the kitchen.
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/orders/") && response.request().method() === "POST"
+    ),
+    page.getByRole("button", { name: "Schedule", exact: true }).click(),
+  ])
 }
 
 test("order sequence: stock deduction, round-robin staff, and on-hold shortage", async ({ page }) => {

@@ -19,27 +19,69 @@ datasource db {
   provider = "postgresql"
 }
 
-/// The six implemented order statuses. On SQLite this had to be a String with a
-/// comment asking everyone to behave; Postgres has real enums, so the database
-/// now refuses an invalid status instead of trusting the application to.
+/// The order's position in the fulfilment lifecycle — exactly one at a time.
+///
+/// Deliberately does NOT carry payment. "Payment received" and "Refunded" are a
+/// second, independent dimension (see Order.amountPaid/amountRefunded and
+/// PaymentEvent): an order can be paid *and* in production, and a refund can
+/// follow collection without un-collecting it.
+///
+/// Which of these book ingredients is decided in one place —
+/// LIVE_STATUSES in lib/stock-projection.ts — because demand is derived from
+/// live orders rather than stored. Confirmed is deliberately NOT live: details
+/// are agreed but no oven capacity is held until Schedule runs the feasibility
+/// check.
+///
+/// Labels keep the client's own wording; the member names are the identifiers
+/// Prisma needs. serialize.ts maps between the two in one place.
 enum OrderStatus {
+  Confirmed
   Scheduled
-  InProduction   @map("In Production")
-  Ready
-  Completed
-  OnHold         @map("On Hold")
+  InProduction         @map("In Production")
+  ReadyForCollection   @map("Ready for collection")
+  CollectedOrDelivered @map("Collected or delivered")
+  /// Blocked on the customer, not on stock — resolved by asking them, not by
+  /// re-checking the store cupboard. Kept distinct from OnHold so `shortages`
+  /// and the Re-check action keep meaning exactly one thing.
+  AwaitingDetails      @map("Details require clarification")
+  /// Blocked on stock. Carries `shortages`; resolved by Re-check.
+  OnHold               @map("On Hold")
   Cancelled
+}
+
+/// Money moving in or out. Amounts are always positive; `kind` gives direction.
+enum PaymentEventKind {
+  Payment
+  Refund
+}
+
+/// Which customer message a rendered email is.
+enum EmailTemplate {
+  Confirmation
+  Reminder
+  ReadyForCollection @map("Ready for collection")
+  FollowUp           @map("Follow-up")
+}
+
+/// Nothing is actually sent yet, so this records what *would* happen.
+enum EmailStatus {
+  /// Would go out now.
+  ReadyToSend @map("Ready to send")
+  /// Date-triggered (the reminder) and not due yet — sendAfter says when.
+  Pending
+  /// Cannot go out; `suppressedReason` says why (no address, order cancelled).
+  Suppressed
 }
 
 /// One of the five ingredients. `key` matches IngredientKey in lib/types.ts
 /// ("eggs" | "mascarpone" | "savoiardi" | "coffee" | "butter") and stays the
 /// stable identifier the UI and API speak in; the numeric id is internal.
 model Ingredient {
-  id    Int    @id @default(autoincrement())
-  key   String @unique
-  label String
+  id        Int    @id @default(autoincrement())
+  key       String @unique
+  label     String
   /// "" for countable items (eggs), "g" / "ml" otherwise.
-  unit  String
+  unit      String
   /// Display order on the Stock Levels and Restock screens (INGREDIENT_ORDER).
   sortOrder Int
 
@@ -52,31 +94,37 @@ model Ingredient {
 
 /// A sellable product (Mini / Grande / Suprema Classico).
 model ProductVariant {
-  id          String @id
-  name        String
-  description String
-  servings    String
+  id            String  @id
+  name          String
+  description   String
+  servings      String
   /// Soft delete: the Recipes screen can remove a variant, but orders that
   /// already reference it must keep rendering their product name and history.
-  archived    Boolean @default(false)
+  archived      Boolean @default(false)
   /// Display position on the New Order and Recipes screens. Same reason as
   /// Staff.sortOrder: the in-memory array had an order (Mini, Grande, Suprema)
   /// that the New Order form also used to pick its default selection, and row
   /// order out of a database is arbitrary without an explicit column.
-  sortOrder   Int     @default(0)
+  sortOrder     Int     @default(0)
   /// Working days needed between starting production and handing the order over.
   /// productionDate = collectionDate - leadTimeDays, derived on read rather than
   /// stored, so changing a recipe's lead time re-plans orders that have not been
   /// made yet. Note this is deliberately NOT frozen per order the way
   /// consumedIngredients is: that snapshot records what was physically used and
   /// must never move, whereas a lead time is a forward-looking plan.
-  leadTimeDays Int    @default(2)
+  leadTimeDays  Int     @default(2)
   /// How many finished units one batch produces. The kitchen works in batches,
   /// not units — one batch makes two 12-inch cakes whether one was ordered or
   /// two — so ingredient demand is batches x the batch recipe, never units x a
   /// per-unit recipe. Named unitsPerBatch rather than `yield` because that word
   /// is awkward to destructure in JS.
-  unitsPerBatch Int   @default(1)
+  unitsPerBatch Int     @default(1)
+  /// PLACEHOLDER PRICE, in pence. The client has not supplied real prices, the
+  /// same way they had not supplied batch yields — these are plausible numbers
+  /// so totals and refunds have something to work from, and the Recipes screen
+  /// labels them as placeholder. Integer pence, never a float: 0.1 + 0.2 is not
+  /// 0.3 and money must not be approximate.
+  priceAmount   Int     @default(0)
 
   recipeItems RecipeItem[]
   orderItems  OrderItem[]
@@ -89,17 +137,23 @@ model ProductVariant {
 /// opening time in particular — and changing them must not need a deploy.
 /// Enforced as a singleton by pinning the id to 1.
 model CalendarSettings {
-  id Int @id @default(1)
+  id                        Int    @id @default(1)
   /// Weekday numbers that cannot be chosen for collection, using JavaScript's
   /// getDay() convention (0 = Sunday ... 6 = Saturday). Seeded as [1] — the shop
   /// does not do Monday collections. A real integer array on Postgres; on SQLite
   /// this had to be a JSON string that the application parsed by hand.
-  blockedWeekdays Int[] @default([1])
+  blockedWeekdays           Int[]  @default([1])
   /// Earliest time of day an order can be collected, as "HH:mm" in 24-hour form.
-  earliestCollectionTime String @default("10:30")
+  earliestCollectionTime    String @default("10:30")
   /// Ceiling on how many orders may share one production day. A future
   /// constraint rather than a current one, so it is seeded deliberately high.
-  maxOrdersPerProductionDay Int @default(20)
+  maxOrdersPerProductionDay Int    @default(20)
+  /// Shop identity, used by the customer email templates. Here rather than
+  /// hardcoded in a template so the Calendar Rules screen can edit it without a
+  /// deploy — the same reasoning that moved the calendar rules out of code.
+  shopName                  String @default("Paradiso")
+  shopAddress               String @default("")
+  shopPhone                 String @default("")
 
   @@map("calendar_settings")
 }
@@ -107,9 +161,9 @@ model CalendarSettings {
 /// One line of a product's recipe: how much of one ingredient ONE BATCH needs.
 /// Together these rows are the `requires` map from ProductVariant in lib/types.ts.
 model RecipeItem {
-  id           Int    @id @default(autoincrement())
-  variantId    String
-  ingredientId Int
+  id             Int    @id @default(autoincrement())
+  variantId      String
+  ingredientId   Int
   /// Amount needed to make one whole batch, in the ingredient's unit. This used
   /// to be per single unit; the figures did not change, their meaning did. A
   /// Suprema batch has always drawn 6 eggs — what changed is that the batch now
@@ -144,21 +198,23 @@ model StockLevel {
 
 /// A staff member. Doubles as the login identity (dummy auth picks one of these).
 model Staff {
-  id   String @id
-  name String
+  id         String @id
+  name       String
   /// "admin" | "staff" — gates the admin-only screens.
-  role String
+  role       String
   /// Round-robin counter: orders CURRENTLY on this person's plate. Incremented on
   /// assignment, decremented when an order is cancelled, so it tracks live
   /// workload rather than lifetime assignments.
-  orderCount Int @default(0)
+  orderCount Int    @default(0)
   /// Tie-break position for round-robin. In-memory this was free — the roster was
   /// a JS array and a stable sort on orderCount preserved its order. A database
   /// returns no guaranteed row order, so without an explicit column two staff on
   /// an equal count could be picked in either order between runs.
-  sortOrder  Int @default(0)
+  sortOrder  Int    @default(0)
 
-  assignments ProductionAssignment[]
+  assignments   ProductionAssignment[]
+  statusChanges OrderStatusEvent[]
+  paymentEvents PaymentEvent[]
 
   @@map("staff")
 }
@@ -166,24 +222,108 @@ model Staff {
 /// A customer order. Single-product in the UI today, but the line items live in
 /// OrderItem so a multi-product order needs no schema change.
 model Order {
-  id             String   @id @default(uuid())
-  collectionDate DateTime
-  status         OrderStatus
+  id                  String      @id @default(uuid())
+  collectionDate      DateTime
+  status              OrderStatus
   /// This order's share of the batch it is made in, frozen at the moment it was
   /// scheduled ({ eggs: 3, mascarpone: 250, ... }). Empty for orders that never
   /// scheduled. Never recomputed from the live recipe, and never rewritten when
   /// another order joins the same batch. Real jsonb on Postgres; on SQLite it was
   /// a String the application JSON.parse'd on every read.
-  consumedIngredients Json @default("{}")
+  consumedIngredients Json        @default("{}")
   /// Why an order is On Hold: [{ ingredient, shortBy }].
-  shortages           Json @default("[]")
-  createdAt      DateTime @default(now())
+  shortages           Json        @default("[]")
+  createdAt           DateTime    @default(now())
 
+  /// Order total in pence, frozen at creation from the variant's price the same
+  /// way consumedIngredients freezes the recipe: repricing a product must not
+  /// silently restate what an existing customer was charged.
+  totalAmount    Int @default(0)
+  /// Sums of the PaymentEvent ledger, kept on the row so every read does not
+  /// have to aggregate. The ledger is the source of truth; these are derived
+  /// from it in one place (recordPayment / recordRefund) and never set directly.
+  amountPaid     Int @default(0)
+  amountRefunded Int @default(0)
+
+  /// Nullable because orders taken before customers existed have none. The API
+  /// requires one for new orders.
+  customerId String?
+
+  customer      Customer?             @relation(fields: [customerId], references: [id])
   items         OrderItem[]
   statusHistory OrderStatusEvent[]
+  payments      PaymentEvent[]
+  emails        EmailMessage[]
   assignment    ProductionAssignment?
 
+  @@index([customerId])
   @@map("orders")
+}
+
+/// Who an order is for. A model rather than flat columns on Order because the
+/// client's document goes on to ask for customer accounts, favourites and
+/// repeat ordering, all of which need an identity to hang off.
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime @default(now())
+
+  orders Order[]
+
+  /// Not unique: the same household may order under one address, and enforcing
+  /// uniqueness here would reject that without a merge flow to fall back on.
+  @@index([email])
+  @@map("customers")
+}
+
+/// Every movement of money, so "refunded partially" has an amount and a date
+/// rather than being a flag. The client's reporting asks for refunds by month,
+/// which a single column on Order cannot answer.
+model PaymentEvent {
+  id      Int              @id @default(autoincrement())
+  orderId String
+  kind    PaymentEventKind
+  /// Always positive, in pence. Direction comes from `kind`.
+  amount  Int
+  at      DateTime         @default(now())
+  /// Who recorded it. Null for anything written before actors were tracked.
+  actorId String?
+  note    String?
+
+  order Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor Staff? @relation(fields: [actorId], references: [id])
+
+  @@index([orderId])
+  @@map("payment_events")
+}
+
+/// A customer message that has been rendered but not sent. Nothing leaves the
+/// building yet: the row records exactly what the customer would receive and
+/// when, so the behaviour can be agreed before a mail provider is chosen.
+model EmailMessage {
+  id                 Int           @id @default(autoincrement())
+  orderId            String
+  template           EmailTemplate
+  status             EmailStatus
+  toName             String
+  toEmail            String
+  subject            String
+  body               String
+  renderedAt         DateTime      @default(now())
+  /// When this would actually go out. Null means "immediately on render".
+  /// The reminder is date-triggered rather than status-triggered, so it is the
+  /// only one that normally carries a future value.
+  sendAfter          DateTime?
+  suppressedReason   String?
+  /// The status change that produced this message, where one did.
+  triggeredByEventId Int?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("email_messages")
 }
 
 /// One product line on an order.
@@ -206,8 +346,12 @@ model OrderStatusEvent {
   status  OrderStatus
   at      DateTime    @default(now())
   note    String?
+  /// Who moved it. Null means the change predates actor tracking — not
+  /// "the system": an unknown author is recorded as unknown rather than guessed.
+  actorId String?
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor Staff? @relation(fields: [actorId], references: [id])
 
   @@index([orderId])
   @@map("order_status_events")
@@ -217,10 +361,10 @@ model OrderStatusEvent {
 /// single owner), modelled as its own table so the assignment can carry its own
 /// timestamp and be released on cancellation without mutating the order row.
 model ProductionAssignment {
-  id         Int      @id @default(autoincrement())
-  orderId    String   @unique
+  id         Int       @id @default(autoincrement())
+  orderId    String    @unique
   staffId    String
-  assignedAt DateTime @default(now())
+  assignedAt DateTime  @default(now())
   /// Set when the order is cancelled: the assignment stays as a historical record
   /// (Order Detail still shows who had it) but stops counting toward workload.
   releasedAt DateTime?

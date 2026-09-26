@@ -24,10 +24,12 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-status-confirmed: var(--status-confirmed);
   --color-status-scheduled: var(--status-scheduled);
   --color-status-in-production: var(--status-in-production);
   --color-status-ready: var(--status-ready);
   --color-status-completed: var(--status-completed);
+  --color-status-awaiting-details: var(--status-awaiting-details);
   --color-status-on-hold: var(--status-on-hold);
   --color-status-cancelled: var(--status-cancelled);
   --color-success: var(--success);
@@ -72,10 +74,12 @@
      stat tiles sit outside the chart's own variable scope, and because dark
      mode needs its own step rather than the same mix against a dark surface —
      mixing green 45% into a dark brown card turns it olive. */
+  --status-confirmed: oklch(0.72 0.02 60);
   --status-scheduled: oklch(0.78 0.09 145);
   --status-in-production: oklch(0.52 0.1 30);
   --status-ready: oklch(0.36 0.1 29.6);
   --status-completed: oklch(0.6 0.12 145);
+  --status-awaiting-details: oklch(0.72 0.12 75);
   --status-on-hold: oklch(0.76 0.11 45);
   --status-cancelled: oklch(0.577 0.245 27.325);
 
@@ -116,10 +120,12 @@
 
   /* Lighter, still saturated: these sit on a dark card, so the light steps
      would sink into it. */
+  --status-confirmed: oklch(0.62 0.02 60);
   --status-scheduled: oklch(0.72 0.12 145);
   --status-in-production: oklch(0.62 0.14 30);
   --status-ready: oklch(0.5 0.13 29.6);
   --status-completed: oklch(0.8 0.14 145);
+  --status-awaiting-details: oklch(0.76 0.14 80);
   --status-on-hold: oklch(0.78 0.13 55);
   --status-cancelled: oklch(0.704 0.191 22.216);
 

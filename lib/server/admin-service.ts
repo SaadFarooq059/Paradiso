@@ -22,6 +22,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         sortOrder: (lastVariant?.sortOrder ?? -1) + 1,
         leadTimeDays: variant.leadTimeDays,
         unitsPerBatch: variant.unitsPerBatch,
+        priceAmount: variant.priceAmount,
       },
       update: {
         name: variant.name,
@@ -30,6 +31,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         archived: false,
         leadTimeDays: variant.leadTimeDays,
         unitsPerBatch: variant.unitsPerBatch,
+        priceAmount: variant.priceAmount,
       },
     })
 
@@ -153,20 +155,31 @@ export async function saveCalendarSettings(
     }
   }
 
+  // The shop's name goes out in every customer message, so a blank one is
+  // refused here as well as in the form.
+  const shopName = settings.shopName.trim()
+  if (!shopName) {
+    return {
+      state: await loadDashboardState(),
+      message: "A shop name is required — it appears in every customer email.",
+      tone: "error",
+    }
+  }
+
+  const shopFields = {
+    blockedWeekdays,
+    earliestCollectionTime: settings.earliestCollectionTime,
+    maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
+    shopName,
+    shopAddress: settings.shopAddress.trim(),
+    shopPhone: settings.shopPhone.trim(),
+  }
+
   await prisma.calendarSettings.upsert({
     where: { id: 1 },
-    create: {
-      id: 1,
-      blockedWeekdays,
-      earliestCollectionTime: settings.earliestCollectionTime,
-      maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
-    },
-    update: {
-      blockedWeekdays,
-      earliestCollectionTime: settings.earliestCollectionTime,
-      maxOrdersPerProductionDay: settings.maxOrdersPerProductionDay,
-    },
+    create: { id: 1, ...shopFields },
+    update: shopFields,
   })
 
-  return { state: await loadDashboardState(), message: "Calendar rules saved", tone: "success" }
+  return { state: await loadDashboardState(), message: "Settings saved", tone: "success" }
 }
