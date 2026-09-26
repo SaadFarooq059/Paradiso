@@ -7,12 +7,13 @@ import {
   INGREDIENT_INFO,
   INGREDIENT_ORDER,
   ORDER_STATUS_ORDER,
-  STATUS_BAR_COLOR,
 } from "@/lib/mock-data"
 import { AnalyticsBarCard } from "@/components/ui/analytics-bar-card"
+import { Meter } from "@/components/ui/meter"
 import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
+import { StackedBar } from "@/components/ui/stacked-bar"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
-import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
+import type { IngredientKey, Order, OrderStatus, ProductVariant, StaffMember } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface ReportsAnalyticsPanelProps {
@@ -21,37 +22,27 @@ interface ReportsAnalyticsPanelProps {
   staff: StaffMember[]
   /** Batched demand per production day — the real ingredient draw. */
   productionDemand: ProductionDayDemand[]
+  /** What is physically in the building — the denominator for the ingredient meters. */
+  onHand: Record<string, number>
   /** Jump to the Production Calendar, where the per-day breakdown lives. */
   onViewProduction: () => void
 }
 
-interface BarRowProps {
-  leading?: React.ReactNode
-  label: string
-  sublabel?: string
-  value: number
-  max: number
-  valueLabel: string
-  colorClass: string
-}
-
-function BarRow({ leading, label, sublabel, value, max, valueLabel, colorClass }: BarRowProps) {
-  const widthPct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 3 : 0) : 0
-  return (
-    <div className="flex items-center gap-3">
-      {leading}
-      <div className="flex flex-1 flex-col gap-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-sm font-medium text-foreground">{label}</span>
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">{valueLabel}</span>
-        </div>
-        {sublabel && <span className="text-xs text-muted-foreground">{sublabel}</span>}
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div className={cn("h-full rounded-full transition-all", colorClass)} style={{ width: `${widthPct}%` }} />
-        </div>
-      </div>
-    </div>
-  )
+/**
+ * Segment fills for the status bar.
+ *
+ * STATUS_BAR_COLOR maps six statuses onto three hues — Scheduled and Completed
+ * are both the success hue — which is fine for separate rows and useless for
+ * adjacent stacked segments. Each family keeps its meaning and splits by
+ * lightness: soft for the in-progress state, solid for the one it ends in.
+ */
+const STATUS_SEGMENT: Record<OrderStatus, string> = {
+  Scheduled: "bg-success/40",
+  Completed: "bg-success",
+  "In Production": "bg-primary/40",
+  Ready: "bg-primary",
+  "On Hold": "bg-destructive/40",
+  Cancelled: "bg-destructive",
 }
 
 function SectionCard({
@@ -88,6 +79,7 @@ export function ReportsAnalyticsPanel({
   variantsById,
   staff,
   productionDemand,
+  onHand,
   onViewProduction,
 }: ReportsAnalyticsPanelProps) {
   // 1. Orders by status
@@ -95,7 +87,6 @@ export function ReportsAnalyticsPanel({
     status,
     count: orders.filter((order) => order.status === status).length,
   }))
-  const maxStatusCount = Math.max(...statusCounts.map((s) => s.count), 1)
 
   // 2. Product performance — total quantity ordered per variant, across all orders
   const quantityByProduct = new Map<string, number>()
@@ -134,7 +125,6 @@ export function ReportsAnalyticsPanel({
     key,
     total: consumedTotals[key] ?? 0,
   }))
-  const maxConsumption = Math.max(...consumptionRows.map((r) => r.total), 1)
 
   // 4. Staff workload — the same orderCount the round-robin assignment reads and increments
   const maxOrderCount = Math.max(...staff.map((member) => member.orderCount), 1)
@@ -150,7 +140,6 @@ export function ReportsAnalyticsPanel({
   const blockRows = [...blockCounts.entries()]
     .map(([ingredient, count]) => ({ ingredient, count }))
     .sort((a, b) => b.count - a.count)
-  const maxBlockCount = Math.max(...blockRows.map((r) => r.count), 1)
 
   return (
     <div className="@container grid grid-cols-1 gap-4 @2xl:grid-cols-2">
@@ -167,17 +156,19 @@ export function ReportsAnalyticsPanel({
         action={{ label: "See it day by day", onClick: onViewProduction }}
       />
 
-      <SectionCard icon={BarChart3} title="Orders by status" description="Every order placed this session.">
-        {statusCounts.map(({ status, count }) => (
-          <BarRow
-            key={status}
-            label={status}
-            value={count}
-            max={maxStatusCount}
-            valueLabel={String(count)}
-            colorClass={STATUS_BAR_COLOR[status]}
-          />
-        ))}
+      <SectionCard
+        icon={BarChart3}
+        title="Orders by status"
+        description={`${orders.length} order${orders.length === 1 ? "" : "s"} placed this session, by where each one has got to.`}
+      >
+        <StackedBar
+          segments={ORDER_STATUS_ORDER.map((status) => ({
+            label: status,
+            value: statusCounts.find((entry) => entry.status === status)?.count ?? 0,
+            className: STATUS_SEGMENT[status],
+          }))}
+          emptyMessage="No orders yet — the pipeline will fill in here."
+        />
       </SectionCard>
 
       <AnalyticsBarCard
@@ -203,16 +194,23 @@ export function ReportsAnalyticsPanel({
             <EmptyDescription>Ingredient totals will show up once an order is scheduled.</EmptyDescription>
           </Empty>
         ) : (
-          consumptionRows.map(({ key, total }) => (
-            <BarRow
-              key={key}
-              label={INGREDIENT_INFO[key].label}
-              value={total}
-              max={maxConsumption}
-              valueLabel={`${total}${INGREDIENT_INFO[key].unit}`}
-              colorClass="bg-chart-4"
-            />
-          ))
+          consumptionRows.map(({ key, total }) => {
+            const info = INGREDIENT_INFO[key]
+            const stock = onHand[key] ?? 0
+            return (
+              <Meter
+                key={key}
+                label={info.label}
+                ratio={stock > 0 ? total / stock : 0}
+                valueLabel={`${total}${info.unit} of ${stock}${info.unit}`}
+                sublabel={
+                  stock > 0 && total > stock
+                    ? `Over-committed by ${Math.round((total - stock) * 100) / 100}${info.unit}`
+                    : `${stock > 0 ? Math.round((total / stock) * 100) : 0}% of what's in the building`
+                }
+              />
+            )
+          })
         )}
       </SectionCard>
 
@@ -222,12 +220,12 @@ export function ReportsAnalyticsPanel({
         description="Orders currently assigned per staff member (the round-robin counter)."
       >
         {staff.map((member) => (
-          <BarRow
+          <Meter
             key={member.id}
             leading={
               <span
                 className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white",
+                  "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
                   getStaffColor(member.name)
                 )}
               >
@@ -235,10 +233,11 @@ export function ReportsAnalyticsPanel({
               </span>
             }
             label={member.name}
-            value={member.orderCount}
-            max={maxOrderCount}
+            // Against the busiest person, so the bars answer "who is carrying
+            // more" rather than each filling its own row.
+            ratio={maxOrderCount > 0 ? member.orderCount / maxOrderCount : 0}
             valueLabel={`${member.orderCount} order${member.orderCount === 1 ? "" : "s"}`}
-            colorClass={getStaffColor(member.name)}
+            fillClass={getStaffColor(member.name)}
           />
         ))}
       </SectionCard>
@@ -255,14 +254,19 @@ export function ReportsAnalyticsPanel({
           </Empty>
         ) : (
           blockRows.map(({ ingredient, count }) => (
-            <BarRow
+            <div
               key={ingredient}
-              label={INGREDIENT_INFO[ingredient].label}
-              value={count}
-              max={maxBlockCount}
-              valueLabel={`blocking ${count} order${count === 1 ? "" : "s"}`}
-              colorClass="bg-destructive"
-            />
+              className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
+            >
+              {/* Status always ships with an icon and a label, never colour alone. */}
+              <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <span className="flex-1 text-sm font-medium text-foreground">
+                {INGREDIENT_INFO[ingredient].label}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-destructive">
+                blocking {count} order{count === 1 ? "" : "s"}
+              </span>
+            </div>
           ))
         )}
       </SectionCard>

@@ -282,6 +282,7 @@ export function CrmDashboard() {
                   variantsById={variantsById}
                   staff={staff}
                   productionDemand={productionDemand}
+                  onHand={capacity}
                   onViewProduction={() => handleViewChange("calendar")}
                 />
               )}
