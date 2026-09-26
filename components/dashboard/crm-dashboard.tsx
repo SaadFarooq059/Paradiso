@@ -282,6 +282,7 @@ export function CrmDashboard() {
                   variantsById={variantsById}
                   staff={staff}
                   productionDemand={productionDemand}
+                  onViewProduction={() => handleViewChange("calendar")}
                 />
               )}
               {view === "calendar-rules" && isAdmin && (

@@ -10,6 +10,7 @@ import {
   ORDER_STATUS_ORDER,
   STATUS_BAR_COLOR,
 } from "@/lib/mock-data"
+import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
 import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -20,6 +21,8 @@ interface ReportsAnalyticsPanelProps {
   staff: StaffMember[]
   /** Batched demand per production day — the real ingredient draw. */
   productionDemand: ProductionDayDemand[]
+  /** Jump to the Production Calendar, where the per-day breakdown lives. */
+  onViewProduction: () => void
 }
 
 interface BarRowProps {
@@ -85,6 +88,7 @@ export function ReportsAnalyticsPanel({
   variantsById,
   staff,
   productionDemand,
+  onViewProduction,
 }: ReportsAnalyticsPanelProps) {
   // 1. Orders by status
   const statusCounts = ORDER_STATUS_ORDER.map((status) => ({
@@ -115,7 +119,13 @@ export function ReportsAnalyticsPanel({
       if (amount) consumedTotals[key] = (consumedTotals[key] ?? 0) + amount
     }
   }
-  // Units produced but not ordered, across every scheduled batch.
+  // The batching payoff, as one figure: the ovens produce whole batches, so the
+  // units coming out split into the ones somebody ordered and the spare capacity
+  // nobody has claimed yet. Both come straight from the per-day batch breakdown.
+  const orderedUnits = productionDemand.reduce(
+    (total, day) => total + day.variants.reduce((sum, v) => sum + v.units, 0),
+    0
+  )
   const surplusUnits = productionDemand.reduce(
     (total, day) => total + day.variants.reduce((sum, v) => sum + v.surplusUnits, 0),
     0
@@ -144,6 +154,19 @@ export function ReportsAnalyticsPanel({
 
   return (
     <div className="@container grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+      <ProportionRingCard
+        className="@2xl:col-span-2 @4xl:col-span-1"
+        caption="In production"
+        total={orderedUnits + surplusUnits}
+        totalSuffix="units coming out of the ovens"
+        segments={[
+          { label: "Ordered", value: orderedUnits, color: "var(--color-chart-2)" },
+          { label: "Spare capacity", value: surplusUnits, color: "var(--color-chart-4)" },
+        ]}
+        emptyMessage="Nothing is in production, so there are no batches to break down yet."
+        action={{ label: "See it day by day", onClick: onViewProduction }}
+      />
+
       <SectionCard icon={BarChart3} title="Orders by status" description="Every order placed this session.">
         {statusCounts.map(({ status, count }) => (
           <BarRow
