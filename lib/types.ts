@@ -56,10 +56,23 @@ export interface CalendarSettings {
   shopName: string
   shopAddress: string
   shopPhone: string
+  shopEmail: string
+  /** Free text — the shop's hours are not uniform, and emails only print them. */
+  shopOpeningHours: string
   /** At what stage a wedding starts holding ingredients and production capacity. */
   weddingCapacityStage: WeddingCapacityStage
-  /** PLACEHOLDER deposit percentage applied to a quote total. */
+  /** The client's terms: 50% on booking. */
   weddingDepositPercent: number
+  /** Balance due no later than this many days before the event. */
+  weddingBalanceDueDaysBefore: number
+  /** What customers are told to expect when they ask for a quote. */
+  weddingQuoteTurnaround: string
+  /** Delivery in pence per mile, with a ceiling and a minimum order. */
+  deliveryPerMile: number
+  deliveryMaxMiles: number
+  deliveryMinimumOrder: number
+  /** A loan deposit is refunded if the item returns within this many days. */
+  loanReturnDays: number
 }
 
 export type StaffName = string
@@ -219,9 +232,23 @@ export interface WeddingPackage {
   id: string
   name: string
   description: string
-  /** PLACEHOLDER base price, in pence. */
+  /** Base price in pence, from the client's published range. */
   basePrice: number
+  serves: string
+  dimensions: string
+  stencilOptions: string[]
   includes: string[]
+}
+
+export interface WeddingExtra {
+  id: string
+  name: string
+  description: string
+  /** Price per unit, in pence. */
+  unitPrice: number
+  unit: string
+  bulkFrom: number | null
+  bulkDiscountPercent: number | null
 }
 
 export interface QuoteTier {
@@ -235,7 +262,14 @@ export interface WeddingQuote {
   version: number
   packageId: string | null
   basePrice: number
-  adjustments: { label: string; amount: number }[]
+  /** Hand-typed lines and priced ones; `kind` marks the ones the server priced. */
+  adjustments: {
+    label: string
+    amount: number
+    kind?: "extra" | "delivery" | "stencil"
+    extraId?: string
+    quantity?: number
+  }[]
   total: number
   guestCount: number
   note: string | null
@@ -252,6 +286,10 @@ export interface EquipmentLoan {
   outAt: number | null
   returned: boolean
   returnedAt: number | null
+  /** Deposit held against the item, in pence. */
+  depositAmount: number
+  /** Set once the deposit has actually gone back. */
+  depositRefundedAt: number | null
 }
 
 export interface WeddingStageEvent {
@@ -283,6 +321,8 @@ export interface Wedding {
   payment: PaymentSummary
   loans: EquipmentLoan[]
   stageHistory: WeddingStageEvent[]
+  /** When the balance must be settled by — the client's terms. */
+  balanceDueDate: number | null
   /** Derived: deposit due under the current setting. */
   depositDue: number
   outstanding: number

@@ -11,7 +11,7 @@ import {
   type StockRecord,
 } from "@/lib/stock-projection"
 import { productionDateFor } from "@/lib/production-schedule"
-import { shopDayOf, shopMoment, type ShopDay } from "@/lib/shop-time"
+import { addShopDays, shopDayOf, shopMoment, type ShopDay } from "@/lib/shop-time"
 import { formatMoney } from "@/lib/payments"
 import {
   CAPACITY_THRESHOLD,
@@ -21,6 +21,8 @@ import {
   quoteTotal,
   WEDDING_PROGRESSION,
   type QuoteAdjustment,
+  deliveryAmount,
+  extraLineAmount,
   type WeddingCapacityStage,
   type WeddingStage,
 } from "@/lib/weddings"
@@ -193,10 +195,17 @@ export async function createEnquiry(
 
 export interface QuoteInput {
   packageId: string | null
+  /** Hand-typed lines only. Priced extras arrive as ids and quantities below. */
   adjustments: QuoteAdjustment[]
   guestCount: number
   tiers: { variantId: string; quantity: number; label?: string }[]
   note?: string
+  /** The client picks items and counts; this module decides what they cost. */
+  extras: { extraId: string; quantity: number }[]
+  /** Null means collection, which is free. */
+  deliveryMiles: number | null
+  /** The stencilled message, when the chosen package offers one. */
+  stencil: string | null
 }
 
 /**
@@ -228,6 +237,7 @@ export async function saveQuote(
       return { message: "A quote needs at least one tier.", tone: "error" as const }
     }
 
+    const settings = await readCalendarSettings(tx)
     const pkg = input.packageId
       ? await tx.weddingPackage.findUnique({ where: { id: input.packageId } })
       : null
@@ -242,7 +252,66 @@ export async function saveQuote(
       }
     }
     const basePrice = pkg?.basePrice ?? 0
-    const total = quoteTotal(basePrice, input.adjustments)
+
+    // Extras are priced here, from the price list in the database. The client
+    // sends what was chosen and how many; it never sends what they cost. A
+    // browser that posts its own figure would otherwise set its own price.
+    const priced: QuoteAdjustment[] = []
+    if (input.extras.length > 0) {
+      const chosen = await tx.weddingExtra.findMany({
+        where: { id: { in: input.extras.map((e) => e.extraId) }, active: true },
+      })
+      const byId = new Map(chosen.map((e) => [e.id, e]))
+      for (const { extraId, quantity } of input.extras) {
+        const extra = byId.get(extraId)
+        // Same rule as a missing package: an extra we cannot price is refused
+        // rather than quietly costed at nothing.
+        if (!extra) {
+          return { message: `"${extraId}" is no longer on the price list.`, tone: "error" as const }
+        }
+        const amount = extraLineAmount(extra, quantity)
+        const discounted = extra.bulkFrom !== null && quantity >= extra.bulkFrom
+        priced.push({
+          kind: "extra",
+          extraId,
+          quantity,
+          label: `${extra.name} × ${quantity}${discounted ? ` (${extra.bulkDiscountPercent}% bulk)` : ""}`,
+          amount,
+        })
+      }
+    }
+
+    if (input.deliveryMiles !== null) {
+      if (input.deliveryMiles > settings.deliveryMaxMiles) {
+        return {
+          message: `The shop delivers up to ${settings.deliveryMaxMiles} miles.`,
+          tone: "error" as const,
+        }
+      }
+      priced.push({
+        kind: "delivery",
+        quantity: input.deliveryMiles,
+        label: `Delivery, ${input.deliveryMiles} miles`,
+        amount: deliveryAmount(input.deliveryMiles, settings.deliveryPerMile),
+      })
+    }
+
+    if (input.stencil) {
+      // Included in the package price; it is on the quote so the kitchen and the
+      // customer are reading the same words.
+      priced.push({ kind: "stencil", label: `Stencil: "${input.stencil}"`, amount: 0 })
+    }
+
+    const adjustments = [...input.adjustments, ...priced]
+    const total = quoteTotal(basePrice, adjustments)
+
+    // The client's delivery terms, checked against the quote it is attached to.
+    if (input.deliveryMiles !== null && total < settings.deliveryMinimumOrder) {
+      return {
+        message: `Delivery needs a minimum order of ${(settings.deliveryMinimumOrder / 100).toFixed(0)} pounds. This quote is under that, so it is collection only.`,
+        tone: "error" as const,
+      }
+    }
 
     // Only re-check the kitchen if this wedding is already holding capacity —
     // an unbooked wedding is not competing for anything yet.
@@ -272,7 +341,7 @@ export async function saveQuote(
         version,
         packageId: pkg?.id ?? null,
         basePrice,
-        adjustments: asJson(input.adjustments),
+        adjustments: asJson(adjustments),
         total,
         guestCount: input.guestCount,
         note: input.note?.trim() || null,
@@ -289,7 +358,15 @@ export async function saveQuote(
 
     await tx.wedding.update({
       where: { id: weddingId },
-      data: { currentQuoteId: quote.id, guestCount: input.guestCount },
+      data: {
+        currentQuoteId: quote.id,
+        guestCount: input.guestCount,
+        // The client's terms: no later than a fixed number of days before the
+        // event. Counted in shop days so it never lands a day out.
+        balanceDueDate: shopMoment(
+          addShopDays(shopDayOf(wedding.eventDate), -settings.weddingBalanceDueDaysBefore)
+        ),
+      },
     })
 
     // A first quote moves Enquiry along; later versions leave the stage alone.
@@ -526,27 +603,76 @@ export async function saveLoan(
   weddingId: string,
   item: string,
   quantity: number,
+  depositAmount = 0,
   actor: StaffMember | null = null
 ): Promise<MutationResult> {
   if (!item.trim()) {
     return { state: await loadDashboardState(), message: "Name the item being lent.", tone: "error" }
   }
   await prisma.equipmentLoan.create({
-    data: { weddingId, item: item.trim(), quantity: Math.max(1, quantity), outAt: new Date() },
+    data: {
+      weddingId,
+      item: item.trim(),
+      quantity: Math.max(1, quantity),
+      outAt: new Date(),
+      depositAmount: Math.max(0, depositAmount),
+    },
   })
-  return { state: await loadDashboardState(), message: `${item.trim()} marked out on loan`, tone: "success" }
+  const held = depositAmount > 0 ? ` — ${formatMoney(depositAmount)} deposit held` : ""
+  return {
+    state: await loadDashboardState(),
+    message: `${item.trim()} marked out on loan${held}`,
+    tone: "success",
+  }
 }
 
+/**
+ * Marks a loaned item returned, and refunds its deposit if it came back in time.
+ *
+ * The client's terms: deposits are refunded when the item is returned within a
+ * week. Returning late is still a return — the stand is back — so it is recorded
+ * as one, but the deposit is not refunded and the reply says why rather than
+ * leaving someone to wonder where the money went.
+ */
 export async function returnLoan(loanId: number): Promise<MutationResult> {
   const loan = await prisma.equipmentLoan.findUnique({ where: { id: loanId } })
   if (!loan) {
     return { state: await loadDashboardState(), message: "No such loan.", tone: "error" }
   }
+  if (loan.returned) {
+    return { state: await loadDashboardState(), message: `${loan.item} is already back.`, tone: "error" }
+  }
+
+  const settings = await readCalendarSettings()
+  const now = new Date()
+  const outAt = loan.outAt ?? now
+  // Counted in whole shop days, not milliseconds: "within a week" is a calendar
+  // question, and an item out on Monday morning and back the next Monday
+  // afternoon should not fail on the hours.
+  const daysOut = Math.round(
+    (shopMoment(shopDayOf(now)).getTime() - shopMoment(shopDayOf(outAt)).getTime()) / 86_400_000
+  )
+  const inTime = daysOut <= settings.loanReturnDays
+
   await prisma.equipmentLoan.update({
     where: { id: loanId },
-    data: { returned: true, returnedAt: new Date() },
+    data: {
+      returned: true,
+      returnedAt: now,
+      depositRefundedAt: inTime && loan.depositAmount > 0 ? now : null,
+    },
   })
-  return { state: await loadDashboardState(), message: `${loan.item} marked returned`, tone: "success" }
+
+  if (loan.depositAmount === 0) {
+    return { state: await loadDashboardState(), message: `${loan.item} marked returned`, tone: "success" }
+  }
+  return {
+    state: await loadDashboardState(),
+    message: inTime
+      ? `${loan.item} returned — ${formatMoney(loan.depositAmount)} deposit refunded`
+      : `${loan.item} returned after ${daysOut} days — the ${formatMoney(loan.depositAmount)} deposit is not refunded (terms are ${settings.loanReturnDays} days)`,
+    tone: inTime ? "success" : "warning",
+  }
 }
 
 export async function saveLogistics(

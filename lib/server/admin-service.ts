@@ -252,6 +252,14 @@ export async function saveCalendarSettings(
     shopPhone: settings.shopPhone.trim(),
     weddingCapacityStage: settings.weddingCapacityStage,
     weddingDepositPercent: settings.weddingDepositPercent,
+    shopEmail: settings.shopEmail.trim(),
+    shopOpeningHours: settings.shopOpeningHours.trim(),
+    weddingBalanceDueDaysBefore: settings.weddingBalanceDueDaysBefore,
+    weddingQuoteTurnaround: settings.weddingQuoteTurnaround.trim(),
+    deliveryPerMile: settings.deliveryPerMile,
+    deliveryMaxMiles: settings.deliveryMaxMiles,
+    deliveryMinimumOrder: settings.deliveryMinimumOrder,
+    loanReturnDays: settings.loanReturnDays,
   }
 
   const before = await readCalendarSettings()

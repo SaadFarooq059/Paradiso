@@ -31,6 +31,11 @@ export async function POST(request: Request) {
     ? body.weddingCapacityStage
     : null
   const weddingDepositPercent = Number.parseInt(String(body.weddingDepositPercent), 10)
+  const text = (key: string) => (typeof body[key] === "string" ? (body[key] as string).trim() : "")
+  const whole = (key: string, fallback: number) => {
+    const value = Number.parseInt(String(body[key]), 10)
+    return Number.isFinite(value) && value >= 0 ? value : fallback
+  }
 
   if (!blockedWeekdays) return badRequest("Blocked weekdays must be a list.")
   if (!earliestCollectionTime) return badRequest("An earliest collection time is required.")
@@ -54,6 +59,14 @@ export async function POST(request: Request) {
       shopPhone,
       weddingCapacityStage,
       weddingDepositPercent,
+      shopEmail: text("shopEmail"),
+      shopOpeningHours: text("shopOpeningHours"),
+      weddingBalanceDueDaysBefore: whole("weddingBalanceDueDaysBefore", 14),
+      weddingQuoteTurnaround: text("weddingQuoteTurnaround") || "2-3 days",
+      deliveryPerMile: whole("deliveryPerMile", 300),
+      deliveryMaxMiles: whole("deliveryMaxMiles", 50),
+      deliveryMinimumOrder: whole("deliveryMinimumOrder", 20000),
+      loanReturnDays: whole("loanReturnDays", 7),
     }, member)
   )
   })

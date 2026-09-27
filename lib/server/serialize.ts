@@ -11,6 +11,7 @@ import type {
   ShortageReason,
   StaffMember,
   Wedding,
+  WeddingExtra,
   WeddingPackage,
 } from "@/lib/types"
 
@@ -69,6 +70,7 @@ export interface DashboardState {
   /** Weddings and bespoke orders, newest event first. */
   weddings: SerializedWedding[]
   weddingPackages: WeddingPackage[]
+  weddingExtras: WeddingExtra[]
 }
 
 /**

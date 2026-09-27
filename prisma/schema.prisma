@@ -178,29 +178,44 @@ model ProductVariant {
 /// opening time in particular — and changing them must not need a deploy.
 /// Enforced as a singleton by pinning the id to 1.
 model CalendarSettings {
-  id                        Int                  @id @default(1)
+  id                          Int                  @id @default(1)
   /// Weekday numbers that cannot be chosen for collection, using JavaScript's
   /// getDay() convention (0 = Sunday ... 6 = Saturday). Seeded as [1] — the shop
   /// does not do Monday collections. A real integer array on Postgres; on SQLite
   /// this had to be a JSON string that the application parsed by hand.
-  blockedWeekdays           Int[]                @default([1])
+  blockedWeekdays             Int[]                @default([1])
   /// Earliest time of day an order can be collected, as "HH:mm" in 24-hour form.
-  earliestCollectionTime    String               @default("10:30")
+  earliestCollectionTime      String               @default("10:30")
   /// Ceiling on how many orders may share one production day. A future
   /// constraint rather than a current one, so it is seeded deliberately high.
-  maxOrdersPerProductionDay Int                  @default(20)
+  maxOrdersPerProductionDay   Int                  @default(20)
   /// Shop identity, used by the customer email templates. Here rather than
   /// hardcoded in a template so the Calendar Rules screen can edit it without a
   /// deploy — the same reasoning that moved the calendar rules out of code.
-  shopName                  String               @default("Paradiso")
-  shopAddress               String               @default("")
-  shopPhone                 String               @default("")
+  shopName                    String               @default("Paradiso")
+  shopAddress                 String               @default("")
+  shopPhone                   String               @default("")
+  shopEmail                   String               @default("")
+  /// Free text, because the shop's hours are not uniform — Monday closed,
+  /// Tue–Sat 10:00–17:00, Sun 10:00–16:00 — and the app only needs to print
+  /// them in a customer email, not reason about closing time.
+  shopOpeningHours            String               @default("")
   /// At what stage a wedding starts holding ingredients and production capacity.
   /// A setting rather than a constant: the shop will have a view on it, and
   /// welding it in would make that view a code change.
-  weddingCapacityStage      WeddingCapacityStage @default(AtDeposit)
+  weddingCapacityStage        WeddingCapacityStage @default(AtDeposit)
   /// PLACEHOLDER deposit percentage, applied to a quote total.
-  weddingDepositPercent     Int                  @default(25)
+  weddingDepositPercent       Int                  @default(50)
+  /// The balance is due no later than this many days before the event.
+  weddingBalanceDueDaysBefore Int                  @default(14)
+  /// What customers are told to expect when they ask for a quote.
+  weddingQuoteTurnaround      String               @default("2-3 days")
+  /// Delivery, in pence per mile, with a ceiling and a minimum order.
+  deliveryPerMile             Int                  @default(300)
+  deliveryMaxMiles            Int                  @default(50)
+  deliveryMinimumOrder        Int                  @default(20000)
+  /// A loan deposit is refunded if the item comes back within this many days.
+  loanReturnDays              Int                  @default(7)
 
   @@map("calendar_settings")
 }
@@ -461,15 +476,21 @@ model RestockEntry {
 /// A named wedding package. Seeded with plausible placeholders — the client has
 /// not given us real prices, the same standing as the batch yields.
 model WeddingPackage {
-  id          String   @id
-  name        String
-  description String
-  /// PLACEHOLDER base price, in pence.
-  basePrice   Int
+  id             String   @id
+  name           String
+  description    String
+  /// Base price in pence. Real figures from the client's site.
+  basePrice      Int
+  /// How many it serves, as the shop words it ("up to 83", "approx 40").
+  serves         String   @default("")
+  /// Physical size where the client publishes one ("32 x 52cm").
+  dimensions     String   @default("")
+  /// Stencil wording this package can be finished with, where it applies.
+  stencilOptions String[] @default([])
   /// What the package includes, one line each.
-  includes    String[]
-  active      Boolean  @default(true)
-  sortOrder   Int      @default(0)
+  includes       String[]
+  active         Boolean  @default(true)
+  sortOrder      Int      @default(0)
 
   quotes Quote[]
 
@@ -590,14 +611,20 @@ model QuoteTier {
 
 /// Trays and cake stands out on loan. Explicitly in the client's document.
 model EquipmentLoan {
-  id         Int       @id @default(autoincrement())
-  weddingId  String
-  item       String
-  quantity   Int       @default(1)
-  outAt      DateTime?
-  returned   Boolean   @default(false)
-  returnedAt DateTime?
-  note       String?
+  id                Int       @id @default(autoincrement())
+  weddingId         String
+  item              String
+  quantity          Int       @default(1)
+  outAt             DateTime?
+  returned          Boolean   @default(false)
+  returnedAt        DateTime?
+  note              String?
+  /// Deposit taken against the item, in pence. Refunded when it comes back
+  /// inside the window in CalendarSettings.loanReturnDays.
+  depositAmount     Int       @default(0)
+  /// Set when the deposit has actually been given back, so a late return can be
+  /// recorded as returned without implying the money went with it.
+  depositRefundedAt DateTime?
 
   wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
 
@@ -619,4 +646,25 @@ model WeddingStageEvent {
 
   @@index([weddingId])
   @@map("wedding_stage_events")
+}
+
+/// Extras a wedding quote can be built from — pots, cannoli, delivery.
+///
+/// A priced catalogue rather than free-typed adjustments, so the figures come
+/// from the client's published list and a quote can be checked against it later.
+model WeddingExtra {
+  id                  String  @id
+  name                String
+  description         String  @default("")
+  /// Price per unit, in pence.
+  unitPrice           Int
+  /// What one unit is ("each", "per mile").
+  unit                String  @default("each")
+  /// Quantity at which bulkDiscountPercent starts applying, if any.
+  bulkFrom            Int?
+  bulkDiscountPercent Int?
+  active              Boolean @default(true)
+  sortOrder           Int     @default(0)
+
+  @@map("wedding_extras")
 }

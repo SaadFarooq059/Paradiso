@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 import {
   committed,
+  priceVariant,
   readState,
   resetDemoData,
   signInAs,
@@ -58,7 +59,7 @@ async function weddingAction(
 
 async function quoteIt(page: Page, id: string, tiers: { variantId: string; quantity: number }[], guestCount = 100) {
   return weddingAction(page, id, "quote", {
-    packageId: "celebration",
+    packageId: "classico-tray",
     guestCount,
     adjustments: [],
     tiers,
@@ -73,6 +74,11 @@ async function findWedding(page: Page, id: string) {
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInAs(page, "Admin")
+  // Suprema and Grande have no published price, and an unpriced product cannot
+  // be ordered. These specs are about the kitchen, not the till, so they set a
+  // working price first.
+  await priceVariant(page, "suprema-classico", 4500)
+  await priceVariant(page, "grande-classico", 2800)
 })
 
 test.describe("a wedding is not an order", () => {
@@ -99,9 +105,9 @@ test.describe("a wedding is not an order", () => {
     const wedding = await findWedding(page, created.weddingId!)
     expect(wedding.stage).toBe("Quoted")
     expect(wedding.currentQuote?.version).toBe(1)
-    // The Celebration package is seeded at £780.
-    expect(wedding.currentQuote?.total).toBe(78000)
-    expect(wedding.depositDue).toBe(19500) // 25% placeholder
+    // The Classico tray is the client's published £155.
+    expect(wedding.currentQuote?.total).toBe(15500)
+    expect(wedding.depositDue).toBe(7750) // the client's 50% deposit
   })
 })
 
@@ -120,7 +126,7 @@ test.describe("capacity is booked at the configured stage", () => {
     const wedding = await findWedding(page, id)
     expect(wedding.capacityBookedAt).not.toBeNull()
     // Two Supremas are one batch: six eggs, through the SAME projection orders use.
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
   })
 
   test("the wedding's tiers reach the shared production calendar", async ({ page }) => {
@@ -140,7 +146,7 @@ test.describe("capacity is booked at the configured stage", () => {
     const id = created.weddingId!
     await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
     await weddingAction(page, id, "stage", { stage: "DepositPaid" })
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     await weddingAction(page, id, "stage", { stage: "Cancelled" })
 
@@ -157,7 +163,7 @@ test.describe("changing the capacity setting cannot strand demand", () => {
     await weddingAction(page, id, "stage", { stage: "DepositPaid" })
     const bookedAt = (await findWedding(page, id)).capacityBookedAt
     expect(bookedAt).not.toBeNull()
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     // Tighten: deposit -> final confirmation. This wedding is only at
     // DepositPaid, so under the new rule it would NOT qualify.
@@ -179,7 +185,7 @@ test.describe("changing the capacity setting cannot strand demand", () => {
     // strand the demand and the shortage would only appear on the day.
     const after = await findWedding(page, id)
     expect(after.capacityBookedAt).toBe(bookedAt)
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
   })
 
   test("loosening books a wedding that now qualifies", async ({ page }) => {
@@ -218,7 +224,7 @@ test.describe("changing the capacity setting cannot strand demand", () => {
     })
 
     expect((await findWedding(page, id)).capacityBookedAt).not.toBeNull()
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
   })
 })
 
@@ -232,7 +238,7 @@ test.describe("amendments", () => {
     expect(first.currentQuote?.version).toBe(1)
 
     await weddingAction(page, id, "quote", {
-      packageId: "celebration",
+      packageId: "classico-tray",
       guestCount: 150,
       adjustments: [{ label: "Extra tier", amount: 12000 }],
       tiers: [{ variantId: "mini-classico", quantity: 3 }],
@@ -245,8 +251,8 @@ test.describe("amendments", () => {
     expect(after.quotes).toHaveLength(2)
     const v1 = after.quotes.find((q) => q.version === 1)!
     expect(v1.supersededAt).not.toBeNull()
-    expect(v1.total).toBe(78000)
-    expect(after.currentQuote?.total).toBe(90000)
+    expect(v1.total).toBe(15500)
+    expect(after.currentQuote?.total).toBe(27500)
   })
 
   test("an amendment that will not fit the kitchen is refused with the shortage", async ({ page }) => {
@@ -254,11 +260,11 @@ test.describe("amendments", () => {
     const id = created.weddingId!
     await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
     await weddingAction(page, id, "stage", { stage: "DepositPaid" })
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
-    // Twenty eggs on hand; each Suprema batch takes six and yields two.
+    // Twenty eggs on hand; each Suprema batch takes ten and yields two.
     const result = await weddingAction(page, id, "quote", {
-      packageId: "celebration",
+      packageId: "classico-tray",
       guestCount: 400,
       adjustments: [],
       tiers: [{ variantId: "suprema-classico", quantity: 20 }],
@@ -271,7 +277,7 @@ test.describe("amendments", () => {
     const after = await findWedding(page, id)
     expect(after.currentQuote?.version).toBe(1)
     expect(after.currentQuote?.tiers[0].quantity).toBe(2)
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
   })
 })
 
@@ -282,13 +288,13 @@ test.describe("money reuses the order ledger", () => {
     await quoteIt(page, id, [{ variantId: "mini-classico", quantity: 2 }])
 
     const wedding = await findWedding(page, id)
-    expect(wedding.depositDue).toBe(19500)
+    expect(wedding.depositDue).toBe(7750)
 
-    await weddingAction(page, id, "pay", { amount: 19500 })
+    await weddingAction(page, id, "pay", { amount: 7750 })
 
     const paid = await findWedding(page, id)
-    expect(paid.payment.paid).toBe(19500)
-    expect(paid.outstanding).toBe(78000 - 19500)
+    expect(paid.payment.paid).toBe(7750)
+    expect(paid.outstanding).toBe(15500 - 7750)
     expect(paid.payment.events[0].actorName).toBe("Aisha Bello")
     // Paying the deposit is a pipeline event, and books capacity under the
     // seeded setting.
@@ -323,11 +329,118 @@ test.describe("a missing package is refused, not priced at zero", () => {
 
   test("the seeded packages are present", async ({ page }) => {
     const state = await readState(page)
+    // The client's real range, priced from their published figures.
     expect(state.weddingPackages.map((p) => p.id)).toEqual([
-      "classico-tier",
-      "celebration",
-      "grand-affair",
+      "four-tier-cake",
+      "classico-tray",
+      "classico-glass-dish",
     ])
+  })
+})
+
+test.describe("extras are priced by the shop, not the browser", () => {
+  test("the price list decides, and bulk breaks apply", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    // Thirty maxi cannoli at £4.00 is £120.00, less the client's 10% bulk break
+    // from thirty, so £108.00 on top of the £155.00 tray.
+    await weddingAction(page, id, "quote", {
+      packageId: "classico-tray",
+      guestCount: 100,
+      adjustments: [],
+      tiers: [{ variantId: "mini-classico", quantity: 2 }],
+      extras: [{ extraId: "cannoli-maxi", quantity: 30 }],
+    })
+
+    const wedding = await findWedding(page, id)
+    expect(wedding.currentQuote?.total).toBe(15500 + 10800)
+  })
+
+  test("one short of the break pays full price", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    await weddingAction(page, id, "quote", {
+      packageId: "classico-tray",
+      guestCount: 100,
+      adjustments: [],
+      tiers: [{ variantId: "mini-classico", quantity: 2 }],
+      extras: [{ extraId: "cannoli-maxi", quantity: 29 }],
+    })
+
+    expect((await findWedding(page, id)).currentQuote?.total).toBe(15500 + 11600)
+  })
+
+  test("a price sent by the client is ignored", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    // The browser asks for eight pots at a penny each, and separately tries to
+    // pass the priced line straight through. Neither sets the price.
+    await weddingAction(page, id, "quote", {
+      packageId: "classico-tray",
+      guestCount: 100,
+      adjustments: [{ label: "8oz pot × 8", amount: 8, kind: "extra", extraId: "pot-8oz" }],
+      tiers: [{ variantId: "mini-classico", quantity: 2 }],
+      extras: [{ extraId: "pot-8oz", quantity: 8, unitPrice: 1 }],
+    })
+
+    // Eight pots at the shop's £6.00, and the smuggled line dropped entirely.
+    expect((await findWedding(page, id)).currentQuote?.total).toBe(15500 + 4800)
+  })
+
+  test("delivery under the minimum order is refused", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    // The glass dish is £50, well under the £200 delivery minimum.
+    const result = await weddingAction(page, id, "quote", {
+      packageId: "classico-glass-dish",
+      guestCount: 20,
+      adjustments: [],
+      tiers: [{ variantId: "mini-classico", quantity: 1 }],
+      extras: [],
+      deliveryMiles: 5,
+    })
+
+    expect(result.body.tone).toBe("error")
+    expect(result.body.message).toContain("minimum order")
+    expect((await findWedding(page, id)).currentQuote).toBeNull()
+  })
+
+  test("delivery beyond the range is refused", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    const result = await weddingAction(page, id, "quote", {
+      packageId: "four-tier-cake",
+      guestCount: 80,
+      adjustments: [],
+      tiers: [{ variantId: "mini-classico", quantity: 4 }],
+      extras: [],
+      deliveryMiles: 60,
+    })
+
+    expect(result.body.tone).toBe("error")
+    expect(result.body.message).toContain("50 miles")
+  })
+
+  test("delivery within the terms is charged by the mile", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    // £390 four-tier cake, twelve miles at £3.00.
+    await weddingAction(page, id, "quote", {
+      packageId: "four-tier-cake",
+      guestCount: 80,
+      adjustments: [],
+      tiers: [{ variantId: "mini-classico", quantity: 4 }],
+      extras: [],
+      deliveryMiles: 12,
+    })
+
+    expect((await findWedding(page, id)).currentQuote?.total).toBe(39000 + 3600)
   })
 })
 

@@ -180,7 +180,9 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   />
                   <FieldDescription>
                     How many finished cakes one batch makes. Orders for the same day are pooled and
-                    rounded up to whole batches.
+                    rounded up to whole batches.{" "}
+                    <strong className="font-medium text-foreground">Placeholder</strong> — the
+                    client hasn&apos;t told us what a batch yields.
                   </FieldDescription>
                 </Field>
                 <Field>
@@ -195,10 +197,14 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   <FieldDescription>
                     In pounds. Order totals are worked out from this and frozen when the order is
                     taken, so repricing never restates an existing quote.{" "}
-                    <strong className="font-medium text-foreground">
-                      The seeded prices are placeholders
-                    </strong>{" "}
-                    — the client has not supplied real ones.
+                    {editing.price.trim() === "" || parseMoney(editing.price) === 0 ? (
+                      <strong className="font-medium text-destructive">
+                        No published price — Grande and Suprema prices are not on the client&apos;s
+                        site, so this must not be quoted until they confirm it.
+                      </strong>
+                    ) : (
+                      <>Mini-misu prices come from the client&apos;s published range.</>
+                    )}
                   </FieldDescription>
                 </Field>
                 <Field>
@@ -214,6 +220,14 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                   <FieldDescription>
                     How long before collection this has to go into production. Collection dates
                     inside this window can&apos;t be chosen.
+                    {Number.parseInt(editing.leadTimeDays, 10) > 2 && (
+                      <>
+                        {" "}
+                        <strong className="font-medium text-foreground">Placeholder</strong> — the
+                        client&apos;s site says two days for everything, so which products really
+                        need longer is unconfirmed.
+                      </>
+                    )}
                   </FieldDescription>
                 </Field>
               </div>
@@ -269,7 +283,17 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-medium text-foreground">{variant.name}</p>
-                    <p className="text-xs text-muted-foreground">{variant.servings}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {variant.servings}
+                      {variant.priceAmount > 0 ? ` · ${formatMoney(variant.priceAmount)}` : ""}
+                    </p>
+                    {variant.priceAmount === 0 && (
+                      // Said on the list, not only in the editor: someone
+                      // quoting a Grande over the phone never opens the editor.
+                      <p className="text-xs font-medium text-destructive">
+                        No published price — do not quote
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <Button variant="ghost" size="icon-sm" onClick={() => startEdit(variant)}>

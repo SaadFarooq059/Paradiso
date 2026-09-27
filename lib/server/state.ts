@@ -50,6 +50,7 @@ export type Db = Pick<
   | "calendarSettings"
   | "wedding"
   | "weddingPackage"
+  | "weddingExtra"
 >
 
 /**
@@ -68,6 +69,14 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
     shopName: row.shopName,
     shopAddress: row.shopAddress,
     shopPhone: row.shopPhone,
+    shopEmail: row.shopEmail,
+    shopOpeningHours: row.shopOpeningHours,
+    weddingBalanceDueDaysBefore: row.weddingBalanceDueDaysBefore,
+    weddingQuoteTurnaround: row.weddingQuoteTurnaround,
+    deliveryPerMile: row.deliveryPerMile,
+    deliveryMaxMiles: row.deliveryMaxMiles,
+    deliveryMinimumOrder: row.deliveryMinimumOrder,
+    loanReturnDays: row.loanReturnDays,
     weddingCapacityStage: row.weddingCapacityStage as CalendarSettings["weddingCapacityStage"],
     weddingDepositPercent: row.weddingDepositPercent,
   }
@@ -80,7 +89,7 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
  * they could never disagree; served piecemeal they could.
  */
 export async function loadDashboardState(db: Db = prisma): Promise<DashboardState> {
-  const [ingredients, variants, staff, orders, restocks, weddings, weddingPackages, calendarSettings] =
+  const [ingredients, variants, staff, orders, restocks, weddings, weddingPackages, weddingExtras, calendarSettings] =
     await Promise.all([
     db.ingredient.findMany({ orderBy: { sortOrder: "asc" }, include: { stockLevel: true } }),
     db.productVariant.findMany({
@@ -116,6 +125,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       },
     }),
     db.weddingPackage.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
+    db.weddingExtra.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     readCalendarSettings(db),
   ])
 
@@ -281,6 +291,8 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
         outAt: l.outAt?.getTime() ?? null,
         returned: l.returned,
         returnedAt: l.returnedAt?.getTime() ?? null,
+        depositAmount: l.depositAmount,
+        depositRefundedAt: l.depositRefundedAt?.getTime() ?? null,
       })),
       stageHistory: wedding.stageHistory.map((e) => ({
         stage: e.stage,
@@ -288,6 +300,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
         note: e.note ?? undefined,
         actorName: e.actor?.name ?? null,
       })),
+      balanceDueDate: wedding.balanceDueDate?.getTime() ?? null,
       depositDue: depositAmount(total, calendarSettings.weddingDepositPercent),
       outstanding: outstandingAmount(total, paid, refunded),
     }
@@ -375,7 +388,19 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       name: p.name,
       description: p.description,
       basePrice: p.basePrice,
+      serves: p.serves,
+      dimensions: p.dimensions,
+      stencilOptions: p.stencilOptions,
       includes: p.includes,
+    })),
+    weddingExtras: weddingExtras.map((e) => ({
+      id: e.id,
+      name: e.name,
+      description: e.description,
+      unitPrice: e.unitPrice,
+      unit: e.unit,
+      bulkFrom: e.bulkFrom,
+      bulkDiscountPercent: e.bulkDiscountPercent,
     })),
   }
 }

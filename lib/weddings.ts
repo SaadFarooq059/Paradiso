@@ -114,6 +114,42 @@ export interface QuoteAdjustment {
   label: string
   /** Pence. Negative is a discount. */
   amount: number
+  /**
+   * What produced this line. Absent means someone typed it by hand.
+   *
+   * Priced lines are kept structured rather than flattened to a label and a
+   * number so that amending a quote can rebuild them from the current price
+   * list instead of re-parsing English out of the label.
+   */
+  kind?: "extra" | "delivery" | "stencil"
+  extraId?: string
+  quantity?: number
+}
+
+/**
+ * What a quantity of an extra costs, with the client's bulk break applied.
+ *
+ * The discount is taken off the line rather than the unit price so the rounding
+ * happens once. Thirty maxi cannoli at £4 less 10% is £108, not thirty lots of
+ * £3.60 rounded individually.
+ */
+export function extraLineAmount(
+  extra: { unitPrice: number; bulkFrom: number | null; bulkDiscountPercent: number | null },
+  quantity: number
+): number {
+  const gross = extra.unitPrice * quantity
+  const qualifies =
+    extra.bulkFrom !== null && extra.bulkDiscountPercent !== null && quantity >= extra.bulkFrom
+  if (!qualifies) return gross
+  return gross - Math.round((gross * extra.bulkDiscountPercent!) / 100)
+}
+
+/**
+ * Delivery: a flat per-mile rate over the distance entered. Nothing here doubles
+ * it for the return leg — the client quotes the journey, not the round trip.
+ */
+export function deliveryAmount(miles: number, perMile: number): number {
+  return Math.round(miles * perMile)
 }
 
 /** A quote's total: the package base plus every named adjustment. */

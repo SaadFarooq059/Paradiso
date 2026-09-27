@@ -75,6 +75,14 @@ export async function signOut(page: Page) {
 }
 
 export interface DashboardState {
+  variants: {
+    id: string
+    name: string
+    priceAmount: number
+    leadTimeDays: number
+    unitsPerBatch: number
+    requires: Record<string, number>
+  }[]
   stock: Record<string, number>
   capacity: Record<string, number>
   orders: {
@@ -128,6 +136,7 @@ export interface DashboardState {
     outstanding: number
   }[]
   weddingPackages: { id: string; name: string; basePrice: number }[]
+  calendarSettings: { earliestCollectionTime: string; weddingDepositPercent: number }
   productionDemand: {
     day: string
     amounts: Record<string, number>
@@ -210,6 +219,24 @@ export async function placeOrder(
   if (!confirmed.orderId) return confirmed
   const scheduled = await orderAction(page, confirmed.orderId, "schedule")
   return { ...scheduled, orderId: confirmed.orderId }
+}
+
+/**
+ * Publishes a price for a variant that has none.
+ *
+ * Part of the range has no published price, and an order for an unpriced product
+ * is refused rather than sold for nothing. Specs that exercise the kitchen still
+ * need those products, so they set a price the way a manager would — through the
+ * recipes endpoint — rather than the suite quietly assuming one.
+ */
+export async function priceVariant(page: Page, variantId: string, pence: number) {
+  const state = await readState(page)
+  const variant = state.variants.find((v) => v.id === variantId)
+  if (!variant) throw new Error(`No such variant: ${variantId}`)
+  const response = await page.request.post("/api/variants", {
+    data: { ...variant, priceAmount: pence },
+  })
+  if (!response.ok()) throw new Error(`Could not price ${variantId}: ${response.status()}`)
 }
 
 /** Total committed to live orders: what is on hand minus what is still free. */

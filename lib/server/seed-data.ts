@@ -10,6 +10,7 @@ import {
   INITIAL_STAFF,
   INITIAL_STOCK,
   PRODUCT_VARIANTS,
+  WEDDING_EXTRAS,
   WEDDING_PACKAGES,
 } from "@/lib/mock-data"
 
@@ -43,6 +44,7 @@ export async function seedDatabase() {
     await tx.quote.deleteMany()
     await tx.wedding.deleteMany()
     await tx.weddingPackage.deleteMany()
+    await tx.weddingExtra.deleteMany()
 
     await tx.customer.deleteMany()
     await tx.restockEntry.deleteMany()
@@ -121,6 +123,24 @@ export async function seedDatabase() {
           description: pkg.description,
           basePrice: pkg.basePrice,
           includes: pkg.includes,
+          serves: pkg.serves,
+          dimensions: pkg.dimensions,
+          stencilOptions: pkg.stencilOptions,
+          sortOrder: index,
+        },
+      })
+    }
+
+    for (const [index, extra] of WEDDING_EXTRAS.entries()) {
+      await tx.weddingExtra.create({
+        data: {
+          id: extra.id,
+          name: extra.name,
+          description: extra.description,
+          unitPrice: extra.unitPrice,
+          unit: extra.unit,
+          bulkFrom: extra.bulkFrom ?? null,
+          bulkDiscountPercent: extra.bulkDiscountPercent ?? null,
           sortOrder: index,
         },
       })
@@ -137,6 +157,14 @@ export async function seedDatabase() {
         shopName: INITIAL_CALENDAR_SETTINGS.shopName,
         shopAddress: INITIAL_CALENDAR_SETTINGS.shopAddress,
         shopPhone: INITIAL_CALENDAR_SETTINGS.shopPhone,
+        shopEmail: INITIAL_CALENDAR_SETTINGS.shopEmail,
+        shopOpeningHours: INITIAL_CALENDAR_SETTINGS.shopOpeningHours,
+        weddingBalanceDueDaysBefore: INITIAL_CALENDAR_SETTINGS.weddingBalanceDueDaysBefore,
+        weddingQuoteTurnaround: INITIAL_CALENDAR_SETTINGS.weddingQuoteTurnaround,
+        deliveryPerMile: INITIAL_CALENDAR_SETTINGS.deliveryPerMile,
+        deliveryMaxMiles: INITIAL_CALENDAR_SETTINGS.deliveryMaxMiles,
+        deliveryMinimumOrder: INITIAL_CALENDAR_SETTINGS.deliveryMinimumOrder,
+        loanReturnDays: INITIAL_CALENDAR_SETTINGS.loanReturnDays,
         weddingCapacityStage: INITIAL_CALENDAR_SETTINGS.weddingCapacityStage,
         weddingDepositPercent: INITIAL_CALENDAR_SETTINGS.weddingDepositPercent,
       },
