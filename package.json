@@ -5,11 +5,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && prisma migrate deploy && tsx scripts/check-reference-data.ts && next build",
     "start": "next start",
     "test": "playwright test",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:check": "tsx scripts/check-reference-data.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

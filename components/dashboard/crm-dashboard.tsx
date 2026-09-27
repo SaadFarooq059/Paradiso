@@ -20,6 +20,7 @@ import { CalendarRulesPanel } from "@/components/dashboard/calendar-rules-panel"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { WeddingsPanel } from "@/components/dashboard/weddings-panel"
+import { WeddingsSummaryCard } from "@/components/dashboard/weddings-summary-card"
 import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 import { can, canUseView, landingViewFor } from "@/lib/auth/roles"
@@ -86,6 +87,7 @@ export function CrmDashboard() {
   const { currentUser, isLoading: isAuthLoading, signOut } = useAuth()
   const { data, variantsById, isLoading: isDataLoading, mutate } = useDashboardData()
   const [view, setView] = useState<DashboardView | null>(null)
+  const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   // Which day the Production Calendar is focused on. Lives here rather than inside
   // the panel so Order Detail can jump the calendar to an order's collection date,
@@ -285,6 +287,8 @@ export function CrmDashboard() {
                   variants={variants}
                   settings={calendarSettings}
                   canManage={can(currentUser.role, "weddings:manage")}
+                  selectedId={selectedWeddingId}
+                  onSelectedIdChange={setSelectedWeddingId}
                   onCreate={(input) => void mutate("/api/weddings", { body: JSON.stringify(input) })}
                   onAction={(weddingId, action, payload) =>
                     void mutate(`/api/weddings/${weddingId}`, {
@@ -294,7 +298,25 @@ export function CrmDashboard() {
                 />
               )}
               {view === "orders" && (
-                <OrdersTable orders={orders} variantsById={variantsById} onSelectOrder={setSelectedOrderId} />
+                <div className="flex flex-col gap-4">
+                  <OrdersTable
+                    orders={orders}
+                    variantsById={variantsById}
+                    onSelectOrder={setSelectedOrderId}
+                  />
+                  {/* Weddings live here too, so nobody has to know a separate
+                      screen exists to find one. */}
+                  {can(currentUser.role, "weddings:view") && (
+                    <WeddingsSummaryCard
+                      weddings={weddings}
+                      onSelectWedding={(id) => {
+                        setSelectedWeddingId(id)
+                        setView("weddings")
+                      }}
+                      onViewAll={() => setView("weddings")}
+                    />
+                  )}
+                </div>
               )}
               {view === "calendar" && (
                 <ProductionCalendarPanel
@@ -327,6 +349,7 @@ export function CrmDashboard() {
                   variantsById={variantsById}
                   staff={staff}
                   productionDemand={productionDemand}
+                  weddings={weddings}
                   onHand={capacity}
                   onViewProduction={() => handleViewChange("calendar")}
                 />

@@ -42,6 +42,8 @@ export function WeddingsPanel({
   variants,
   settings,
   canManage,
+  selectedId,
+  onSelectedIdChange,
   onCreate,
   onAction,
 }: {
@@ -50,11 +52,14 @@ export function WeddingsPanel({
   variants: ProductVariant[]
   settings: CalendarSettings
   canManage: boolean
+  /** Controlled by the dashboard so the Orders screen can open one directly. */
+  selectedId: string | null
+  onSelectedIdChange: (id: string | null) => void
   onCreate: (input: Record<string, unknown>) => void
   onAction: (weddingId: string, action: string, payload?: Record<string, unknown>) => void
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  const setSelectedId = onSelectedIdChange
 
   const selected = selectedId ? (weddings.find((w) => w.id === selectedId) ?? null) : null
 

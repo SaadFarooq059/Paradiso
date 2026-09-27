@@ -1,4 +1,14 @@
-import { BarChart3, TrendingUp, TriangleAlert, Users, Wheat } from "lucide-react"
+import {
+  BarChart3,
+  HeartHandshake,
+  Receipt,
+  TrendingUp,
+  TriangleAlert,
+  UserPlus,
+  Users,
+  Wallet,
+  Wheat,
+} from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
@@ -12,13 +22,25 @@ import { OrdersByStatusChart } from "@/components/dashboard/orders-by-status-cha
 import { ExportMenu } from "@/components/ui/export-menu"
 import { analyticsDocument } from "@/lib/export/documents"
 import { Meter } from "@/components/ui/meter"
+import { formatMoney } from "@/lib/payments"
+import { DEAD_STAGES } from "@/lib/weddings"
+import {
+  allLedgerEvents,
+  averageOrderValue,
+  customerSplit,
+  defaultWindowStart,
+  totalsFromLedger,
+  weddingMoney,
+  weddingsByMonth,
+} from "@/lib/reporting"
 import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
-import type { IngredientKey, Order, ProductVariant, StaffMember } from "@/lib/types"
+import type { IngredientKey, Order, ProductVariant, StaffMember, Wedding } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface ReportsAnalyticsPanelProps {
   orders: Order[]
+  weddings: Wedding[]
   variantsById: Record<string, ProductVariant>
   staff: StaffMember[]
   /** Batched demand per production day — the real ingredient draw. */
@@ -61,12 +83,24 @@ function SectionCard({
 
 export function ReportsAnalyticsPanel({
   orders,
+  weddings,
   variantsById,
   staff,
   productionDemand,
   onHand,
   onViewProduction,
 }: ReportsAnalyticsPanelProps) {
+  // Money, all of it from the PaymentEvent ledger. Orders and weddings write to
+  // the same table, so these reconcile by construction rather than by two
+  // separate tallies happening to agree.
+  const ledger = allLedgerEvents(orders, weddings)
+  const money = totalsFromLedger(ledger)
+  const orderMoney = totalsFromLedger(orders.flatMap((o) => o.payment.events))
+  const wedding = weddingMoney(weddings, DEAD_STAGES)
+  const byMonth = weddingsByMonth(weddings, DEAD_STAGES)
+  const aov = averageOrderValue(orders)
+  const customers = customerSplit(orders, weddings, defaultWindowStart())
+
   // 1. Product performance — total quantity ordered per variant, across all orders
   const quantityByProduct = new Map<string, number>()
   for (const order of orders) {
@@ -249,7 +283,179 @@ export function ReportsAnalyticsPanel({
             ))
           )}
         </SectionCard>
+        <SectionCard
+          icon={Wallet}
+          title="Money taken"
+          description="Every payment and refund, orders and weddings together — one ledger, so these reconcile."
+        >
+          <dl className="grid grid-cols-2 gap-3 @sm:grid-cols-4">
+            <Figure label="Taken" value={formatMoney(money.taken)} />
+            <Figure label="Refunded" value={formatMoney(money.refunded)} tone="negative" />
+            <Figure label="Net" value={formatMoney(money.net)} emphasis />
+            <Figure
+              label="Of which weddings"
+              value={formatMoney(wedding.taken - wedding.refunded)}
+            />
+          </dl>
+          <StackedBarish
+            segments={[
+              { label: "Counter orders", value: Math.max(orderMoney.net, 0), className: "bg-chart-2" },
+              { label: "Weddings", value: Math.max(wedding.taken - wedding.refunded, 0), className: "bg-chart-1" },
+            ]}
+            format={formatMoney}
+          />
+          <p className="text-xs text-muted-foreground">
+            Refunds are netted off rather than hidden, so this is what the business kept.
+          </p>
+        </SectionCard>
+
+        <SectionCard
+          icon={HeartHandshake}
+          title="Weddings"
+          description="The bespoke order book: what is quoted, what is held, and what is still owed."
+        >
+          <dl className="grid grid-cols-2 gap-3 @sm:grid-cols-4">
+            <Figure label="Quoted" value={formatMoney(wedding.quoted)} />
+            <Figure label="Deposits held" value={formatMoney(wedding.depositsHeld)} />
+            <Figure label="Outstanding" value={formatMoney(wedding.outstanding)} emphasis />
+            <Figure label="Live" value={String(byMonth.reduce((n, m) => n + m.count, 0))} />
+          </dl>
+          {byMonth.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No weddings booked yet.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-foreground">By month</span>
+              {byMonth.map((month) => (
+                <Meter
+                  key={month.month}
+                  label={month.label}
+                  valueLabel={`${month.count} · ${formatMoney(month.value)}`}
+                  ratio={month.value / Math.max(...byMonth.map((m) => m.value), 1)}
+                  fillClass="bg-chart-1"
+                />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          icon={Receipt}
+          title="Average order value"
+          description="Across orders that were actually fulfilled and had a price."
+        >
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
+              {formatMoney(aov.average)}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              over {aov.counted} order{aov.counted === 1 ? "" : "s"}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Cancelled orders and anything priced at zero are left out — including them would drag
+            the figure toward nothing and answer a different question.
+          </p>
+        </SectionCard>
+
+        <SectionCard
+          icon={UserPlus}
+          title="New and returning customers"
+          description="By when they first bought, over the last 90 days."
+        >
+          <StackedBarish
+            segments={[
+              { label: "New", value: customers.newCustomers, className: "bg-chart-2" },
+              { label: "Returning", value: customers.returning, className: "bg-chart-4" },
+            ]}
+          />
+          <p className="text-xs text-muted-foreground">
+            &quot;Returning&quot; means they had already bought before this window opened — not that
+            they bought twice inside it. {customers.repeatCustomers} customer
+            {customers.repeatCustomers === 1 ? " has" : "s have"} ordered more than once.
+          </p>
+        </SectionCard>
       </div>
+    </div>
+  )
+}
+
+function Figure({
+  label,
+  value,
+  emphasis,
+  tone,
+}: {
+  label: string
+  value: string
+  emphasis?: boolean
+  tone?: "negative"
+}) {
+  return (
+    <div className="flex flex-col">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          "font-mono text-sm tabular-nums",
+          tone === "negative" ? "text-destructive" : "text-foreground",
+          emphasis && "font-semibold"
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * Part-to-whole as one bar plus a legend.
+ *
+ * The legend is never optional: two segments of one measure need naming, and
+ * colour alone cannot carry identity for anyone who cannot distinguish them.
+ */
+function StackedBarish({
+  segments,
+  format = (n: number) => String(n),
+}: {
+  segments: { label: string; value: number; className: string }[]
+  /** How to render the figure. Money must not appear as raw pence. */
+  format?: (value: number) => string
+}) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
+        {total === 0 ? (
+          <div className="h-full w-full rounded-full bg-muted" />
+        ) : (
+          segments
+            .filter((s) => s.value > 0)
+            .map((segment) => (
+              <div
+                key={segment.label}
+                className={cn("h-full rounded-full", segment.className)}
+                style={{ width: `${(segment.value / total) * 100}%` }}
+                title={`${segment.label}: ${segment.value}`}
+              />
+            ))
+        )}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1">
+        {segments.map((segment) => (
+          <li key={segment.label} className="flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                segment.value > 0 ? segment.className : "bg-muted-foreground/25"
+              )}
+            />
+            <span className="text-xs text-muted-foreground">{segment.label}</span>
+            <span className="font-mono text-xs tabular-nums text-foreground">
+              {format(segment.value)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
