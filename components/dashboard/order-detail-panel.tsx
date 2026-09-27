@@ -17,6 +17,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useAuth } from "@/components/auth/auth-context"
+import { can } from "@/lib/auth/roles"
 import { OrderEmailsCard } from "@/components/dashboard/order-emails-card"
 import { OrderPaymentCard } from "@/components/dashboard/order-payment-card"
 import { ProductArt } from "@/components/dashboard/product-art"
@@ -54,6 +56,14 @@ export function OrderDetailPanel({
   onAction,
   onViewOnCalendar,
 }: OrderDetailPanelProps) {
+  const { currentUser } = useAuth()
+  const role = currentUser?.role
+  // Read from the same matrix the API enforces. The routes refuse these anyway;
+  // this stops a role being shown controls it will only be told off for using.
+  const seesMoney = role ? can(role, "payments:record") : false
+  const seesCustomers = role ? can(role, "customers:view") : false
+  const allowed = (capability: Parameters<typeof can>[1]) => (role ? can(role, capability) : false)
+
   const consumedEntries = INGREDIENT_ORDER.filter((key) => order.consumedIngredients[key])
   const canCancel = CANCELLABLE_STATUSES.includes(order.status)
   const canQuery = QUERYABLE_STATUSES.includes(order.status)
@@ -133,7 +143,11 @@ export function OrderDetailPanel({
 
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-foreground">Customer</h3>
-            {order.customer ? (
+            {!seesCustomers ? (
+              <p className="text-sm text-muted-foreground">
+                Customer details aren&apos;t shown for your role.
+              </p>
+            ) : order.customer ? (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <span className="font-medium text-foreground">{order.customer.name}</span>
                 <a
@@ -229,58 +243,60 @@ export function OrderDetailPanel({
       </Card>
       </div>
 
-      <OrderPaymentCard order={order} canCancel={canCancel} onAction={onAction} />
+      {seesMoney && <OrderPaymentCard order={order} canCancel={canCancel} onAction={onAction} />}
 
-      <OrderEmailsCard emails={order.emails} />
+      {seesCustomers && <OrderEmailsCard emails={order.emails} />}
 
       {(canCancel || order.status === "Details require clarification") && (
         <div className="flex flex-wrap gap-2">
-          {order.status === "Confirmed" && (
+          {order.status === "Confirmed" && allowed("orders:schedule") && (
             <Button onClick={() => onAction("schedule")}>
               <CalendarCheck data-icon="inline-start" />
               Schedule
             </Button>
           )}
-          {order.status === "On Hold" && (
+          {order.status === "On Hold" && allowed("orders:schedule") && (
             <Button onClick={() => onAction("recheck")}>
               <RotateCcw data-icon="inline-start" />
               Re-check stock
             </Button>
           )}
-          {order.status === "Scheduled" && (
+          {order.status === "Scheduled" && allowed("orders:advance:production") && (
             <Button onClick={() => onAction("start")}>
               <CookingPot data-icon="inline-start" />
               Start production
             </Button>
           )}
-          {order.status === "In Production" && (
+          {order.status === "In Production" && allowed("orders:advance:production") && (
             <Button onClick={() => onAction("ready")}>
               <PackageCheck data-icon="inline-start" />
               Mark ready
             </Button>
           )}
-          {order.status === "Ready for collection" && (
+          {order.status === "Ready for collection" && allowed("orders:advance:handover") && (
             <Button onClick={() => onAction("complete")}>
               <CheckCircle2 data-icon="inline-start" />
               Mark collected
             </Button>
           )}
-          {order.status === "Details require clarification" && (
+          {order.status === "Details require clarification" && allowed("orders:query") && (
             <Button onClick={() => onAction("resolve")}>
               <MessageSquareCheck data-icon="inline-start" />
               Details clarified
             </Button>
           )}
-          {canQuery && (
+          {canQuery && allowed("orders:query") && (
             <Button variant="outline" onClick={() => onAction("query")}>
               <MessageSquareWarning data-icon="inline-start" />
               Query details
             </Button>
           )}
+          {allowed("orders:cancel") && (
           <Button variant="destructive" onClick={() => onAction("cancel")}>
             <XCircle data-icon="inline-start" />
             Cancel order
           </Button>
+          )}
         </div>
       )}
     </div>
