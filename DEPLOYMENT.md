@@ -23,6 +23,22 @@ If the host requires a pooled connection (most serverless Postgres does), point
 usually cannot run DDL — give the migration step the **direct** endpoint instead,
 which is what `db:deploy` below wants.
 
+## Migrations run during the build
+
+`npm run build` is `prisma generate && prisma migrate deploy && next build`, so
+every deploy applies pending migrations before the new bundle is built.
+
+This is deliberate. The production `DATABASE_URL` is a Vercel *Secret*, which
+means it cannot be pulled to a workstation — `vercel env pull` writes
+`[SENSITIVE]` in its place. Running migrations from the build is therefore the
+only route that does not involve copying the production credential around, and
+it has the better failure mode either way: a migration that fails fails the
+build, so the previous deployment keeps serving rather than a new bundle meeting
+a schema it does not match.
+
+`npm run db:deploy` still exists for running migrations by hand against a
+database you do hold the URL for.
+
 ## First deploy
 
 ```bash
