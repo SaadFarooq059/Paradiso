@@ -127,6 +127,7 @@ export interface DashboardState {
     depositDue: number
     outstanding: number
   }[]
+  weddingPackages: { id: string; name: string; basePrice: number }[]
   productionDemand: {
     day: string
     amounts: Record<string, number>

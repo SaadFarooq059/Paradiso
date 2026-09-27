@@ -231,6 +231,16 @@ export async function saveQuote(
     const pkg = input.packageId
       ? await tx.weddingPackage.findUnique({ where: { id: input.packageId } })
       : null
+    // A package that was asked for and not found must not quietly price at zero.
+    // It did exactly that on production, where the packages table was empty:
+    // a quote that should have been £860 came out at £80 — the sum of its
+    // adjustments — and nothing said so.
+    if (input.packageId && !pkg) {
+      return {
+        message: "That package no longer exists, so the quote has no base price.",
+        tone: "error" as const,
+      }
+    }
     const basePrice = pkg?.basePrice ?? 0
     const total = quoteTotal(basePrice, input.adjustments)
 

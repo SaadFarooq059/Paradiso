@@ -305,6 +305,32 @@ test.describe("money reuses the order ledger", () => {
   })
 })
 
+test.describe("a missing package is refused, not priced at zero", () => {
+  test("quoting against an unknown package errors rather than costing nothing", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const result = await weddingAction(page, created.weddingId!, "quote", {
+      packageId: "no-such-package",
+      guestCount: 100,
+      adjustments: [{ label: "Extra cutting cake", amount: 8000 }],
+      tiers: [{ variantId: "mini-classico", quantity: 1 }],
+    })
+    // Silently using a zero base is how a live quote came out at £80 instead of
+    // £860 — the sum of its adjustments, with nothing to say the base was gone.
+    expect(result.body.tone).toBe("error")
+    const wedding = await findWedding(page, created.weddingId!)
+    expect(wedding.currentQuote).toBeNull()
+  })
+
+  test("the seeded packages are present", async ({ page }) => {
+    const state = await readState(page)
+    expect(state.weddingPackages.map((p) => p.id)).toEqual([
+      "classico-tier",
+      "celebration",
+      "grand-affair",
+    ])
+  })
+})
+
 test.describe("payment wording", () => {
   test("a wedding with its deposit paid is not called Unpaid", async ({ page }) => {
     // The order-side label only knows "paid in full", which is wrong for a
