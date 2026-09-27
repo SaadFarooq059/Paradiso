@@ -1,4 +1,12 @@
-import { addDays, startOfDay } from "date-fns"
+
+import {
+  addShopDays,
+  compareShopDays,
+  shopDayOf,
+  shopMoment,
+  shopWeekdayOf,
+  type ShopDay,
+} from "@/lib/shop-time"
 
 import type {
   CalendarSettings,
@@ -42,10 +50,11 @@ export const OCCUPIES_PRODUCTION_DAY: OrderStatus[] = [
  * must not change with the machine's locale.
  */
 export function dayKey(date: Date): string {
-  const d = startOfDay(date)
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${d.getFullYear()}-${month}-${day}`
+  // Which shop day the instant falls on, never which day the *runtime* thinks
+  // it is. The two differ on any server that is not in Europe/London, and Vercel
+  // runs UTC — a collection stored at 23:30 London would otherwise key to the
+  // following day on the server and the correct one in the browser.
+  return shopDayOf(date)
 }
 
 /**
@@ -53,7 +62,11 @@ export function dayKey(date: Date): string {
  * Derived, never stored — see ProductVariant.leadTimeDays for why.
  */
 export function productionDateFor(collectionDate: Date, leadTimeDays: number): Date {
-  return addDays(startOfDay(collectionDate), -leadTimeDays)
+  // Counted in whole shop days, then turned back into a moment at the start of
+  // that day in the shop's timezone. Subtracting 24h-multiples from an instant
+  // is not the same thing: the clocks change twice a year, and on those two days
+  // it lands an hour out — enough to cross midnight and move the production day.
+  return shopMoment(addShopDays(shopDayOf(collectionDate), -leadTimeDays))
 }
 
 /** The production day for an order, given the variant it was placed against. */
@@ -67,7 +80,7 @@ export function productionDateForOrder(
 }
 
 export function isBlockedWeekday(date: Date, blockedWeekdays: Weekday[]): boolean {
-  return blockedWeekdays.includes(startOfDay(date).getDay() as Weekday)
+  return blockedWeekdays.includes(shopWeekdayOf(shopDayOf(date)) as Weekday)
 }
 
 /**
@@ -76,10 +89,19 @@ export function isBlockedWeekday(date: Date, blockedWeekdays: Weekday[]): boolea
  * moment may be.
  */
 export function applyEarliestCollectionTime(date: Date, earliestCollectionTime: string): Date {
-  const [hours, minutes] = earliestCollectionTime.split(":").map(Number)
-  const stamped = startOfDay(date)
-  stamped.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0)
-  return stamped
+  return shopMoment(shopDayOf(date), earliestCollectionTime)
+}
+
+/**
+ * The same thing from a plain `yyyy-mm-dd`, which is what the client now sends.
+ *
+ * This is the one that matters: taking a day rather than an instant means the
+ * client's timezone never reaches the server at all. The old path turned a
+ * London midnight into 23:00Z the previous day, and a UTC server stamped the
+ * opening time onto that earlier day.
+ */
+export function collectionMomentFor(day: ShopDay, earliestCollectionTime: string): Date {
+  return shopMoment(day, earliestCollectionTime)
 }
 
 /**
@@ -128,15 +150,19 @@ export function collectionDateUnavailableReason(
   date: Date,
   { variant, settings, orders, variantsById, today = new Date() }: AvailabilityContext
 ): UnavailableReason | null {
-  const day = startOfDay(date)
+  // Everything below reasons in shop days. Comparing instants would make the
+  // answer depend on the runtime's clock: "is production already past?" must
+  // mean the same thing in a London browser and on a UTC server, or the picker
+  // greys out a date the server would accept, or worse, offers one it refuses.
+  const collectionDay = shopDayOf(date)
 
-  if (isBlockedWeekday(day, settings.blockedWeekdays)) return "blocked-weekday"
+  if (isBlockedWeekday(date, settings.blockedWeekdays)) return "blocked-weekday"
 
-  const productionDate = productionDateFor(day, variant.leadTimeDays)
-  if (productionDate < startOfDay(today)) return "inside-lead-time"
+  const productionDay = addShopDays(collectionDay, -variant.leadTimeDays)
+  if (compareShopDays(productionDay, shopDayOf(today)) < 0) return "inside-lead-time"
 
   const load = productionDayLoad(orders, variantsById)
-  if ((load.get(dayKey(productionDate)) ?? 0) >= settings.maxOrdersPerProductionDay) {
+  if ((load.get(productionDay) ?? 0) >= settings.maxOrdersPerProductionDay) {
     return "production-day-full"
   }
 
@@ -157,10 +183,12 @@ export function selectableCollectionDates(
   context: AvailabilityContext,
   horizonDays = 90
 ): Date[] {
-  const today = startOfDay(context.today ?? new Date())
+  const today = shopDayOf(context.today ?? new Date())
   const dates: Date[] = []
   for (let offset = 0; offset <= horizonDays; offset++) {
-    const candidate = addDays(today, offset)
+    // Walked as shop days, so the two days a year the clocks change do not
+    // duplicate or skip a candidate the way adding 24h repeatedly would.
+    const candidate = shopMoment(addShopDays(today, offset))
     if (isCollectionDateSelectable(candidate, context)) dates.push(candidate)
   }
   return dates

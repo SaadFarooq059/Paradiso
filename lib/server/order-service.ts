@@ -9,14 +9,15 @@ import {
 } from "@/lib/stock-projection"
 import { loadDashboardState, readCalendarSettings } from "@/lib/server/state"
 import {
-  applyEarliestCollectionTime,
   collectionDateUnavailableReason,
+  collectionMomentFor,
   dayKey,
   OCCUPIES_PRODUCTION_DAY,
   productionDateFor,
   type UnavailableReason,
 } from "@/lib/production-schedule"
 import { ORDER_STATUS_ORDER } from "@/lib/mock-data"
+import { shopMoment, type ShopDay } from "@/lib/shop-time"
 import { renderEmailsForStatus } from "@/lib/server/email-service"
 import { formatMoney } from "@/lib/payments"
 import {
@@ -266,7 +267,7 @@ export interface CustomerDetails {
 export async function createOrder(
   productId: string,
   quantity: number,
-  collectionDate: Date,
+  collectionDay: ShopDay,
   customer: CustomerDetails,
   actor: StaffMember | null = null
 ): Promise<MutationResult> {
@@ -279,7 +280,10 @@ export async function createOrder(
     // the rule true, and an order arriving by any other route gets the same answer.
     const settings = await readCalendarSettings(tx)
     const { orders: existingOrders, variantsById } = await readScheduleContext(tx)
-    const unavailable = collectionDateUnavailableReason(collectionDate, {
+    // Rebuilt as a moment only to ask the availability rules, which take a Date.
+    // The day is the authority; this never round-trips back through the client.
+    const candidateMoment = shopMoment(collectionDay)
+    const unavailable = collectionDateUnavailableReason(candidateMoment, {
       variant,
       settings,
       orders: existingOrders,
@@ -289,8 +293,10 @@ export async function createOrder(
       return { message: UNAVAILABLE_MESSAGE[unavailable], tone: "error" as const }
     }
 
-    // Stored as a real moment, opening time included, rather than midnight.
-    const collectionAt = applyEarliestCollectionTime(collectionDate, settings.earliestCollectionTime)
+    // Stored as a real moment, opening time included, rather than midnight —
+    // built in the shop's timezone from the day the client chose, so the
+    // server's own zone never shifts it.
+    const collectionAt = collectionMomentFor(collectionDay, settings.earliestCollectionTime)
 
     // The customer is matched on email so a repeat order attaches to the same
     // record rather than creating a duplicate. Name and phone are refreshed from

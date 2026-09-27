@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test"
 
+import { shopDayOf } from "@/lib/shop-time"
+
 /**
  * A collection date every seeded product can be made for.
  *
@@ -56,6 +58,7 @@ export interface DashboardState {
     id: string
     productId: string
     quantity: number
+    collectionDate: string
     status: string
     assignedStaff: string | null
     shortages: { ingredient: string; shortBy: number }[]
@@ -126,7 +129,9 @@ export async function confirmOrder(
   date: Date = collectionDate()
 ): Promise<MutationReply> {
   const response = await page.request.post("/api/orders", {
-    data: { productId, quantity, collectionDate: date.toISOString(), ...TEST_CUSTOMER },
+    // A plain shop day, exactly as the browser sends it. Passing an instant here
+    // would hide the bug this suite exists to catch.
+    data: { productId, quantity, collectionDay: shopDayOf(date), ...TEST_CUSTOMER },
   })
   return (await response.json()) as MutationReply
 }

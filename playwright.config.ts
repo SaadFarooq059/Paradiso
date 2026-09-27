@@ -5,11 +5,13 @@ import { defineConfig } from "@playwright/test"
 // specs, and it runs outside Next.js, which is what normally loads .env.
 loadEnv()
 
-// Port is overridable so the suite can target an already-running dev server.
-// Without this the config always pointed at :3000 with reuseExistingServer, which
-// silently adopts whatever app happens to own that port — including an unrelated
-// project — and then reports failures against the wrong application.
-const port = Number(process.env.PARADISO_TEST_PORT ?? 3000)
+// A port of the suite's own. It used to default to :3000 with
+// reuseExistingServer, which silently adopts whatever app happens to own that
+// port — including an unrelated project — and then reports failures against the
+// wrong application. It also must not adopt the developer's own dev server,
+// because that one runs in local time and the point of this config is that the
+// server does not.
+const port = Number(process.env.PARADISO_TEST_PORT ?? 3100)
 const baseURL = `http://localhost:${port}`
 
 export default defineConfig({
@@ -22,7 +24,19 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   webServer: {
-    command: `PORT=${port} npm run dev`,
+    // TZ=UTC is the load-bearing part of this file.
+    //
+    // Production runs on Vercel, which is UTC, while the shop, the browser and
+    // this test process are all Europe/London. That mismatch is what let a
+    // collection date be stored a day early: every date test passed locally
+    // because client and server agreed, and the disagreement only existed in
+    // production. Running the server under UTC here reproduces the production
+    // shape, so anything that depends on the two zones matching now fails in
+    // the suite instead of in front of a customer.
+    // Next 16 allows one dev server per directory, so `npm run dev` has to be
+    // stopped before running the suite — it cannot adopt that one, because it
+    // would be in local time and the mismatch above is the whole point.
+    command: `TZ=UTC PORT=${port} npm run dev`,
     url: baseURL,
     reuseExistingServer: true,
     timeout: 60_000,

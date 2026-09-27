@@ -1,6 +1,11 @@
-import { addDays, startOfDay } from "date-fns"
-
 import { renderEmail, type TemplateKey } from "@/lib/emails/templates"
+import {
+  addShopDays,
+  compareShopDays,
+  shopDayOf,
+  shopMoment,
+  todayShopDay,
+} from "@/lib/shop-time"
 import { readCalendarSettings } from "@/lib/server/state"
 import type { OrderStatus } from "@/lib/types"
 import type { $Enums, Prisma } from "@prisma/client"
@@ -77,9 +82,14 @@ export async function renderEmailsForStatus(
   // The reminder is the only message with a future send date: the day before
   // collection. If that day has already passed there is nothing to remind about,
   // so it is suppressed rather than logged as due in the past.
-  const sendAfter =
-    template === "Reminder" ? addDays(startOfDay(order.collectionDate), -1) : null
-  const reminderHasPassed = sendAfter !== null && sendAfter < startOfDay(new Date())
+  // The day before collection, counted in shop days and turned back into a
+  // moment here. Subtracting 24 hours from the stored instant would drift by an
+  // hour across a clocks-change and could land on the wrong calendar day.
+  const collectionDay = shopDayOf(order.collectionDate)
+  const reminderDay = template === "Reminder" ? addShopDays(collectionDay, -1) : null
+  const sendAfter = reminderDay ? shopMoment(reminderDay) : null
+  const reminderHasPassed =
+    reminderDay !== null && compareShopDays(reminderDay, todayShopDay()) < 0
 
   const rendered = renderEmail(template, {
     customerName: order.customer?.name ?? "there",

@@ -22,6 +22,7 @@ import { StaffManagementPanel } from "@/components/dashboard/staff-management-pa
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
+import { shopDayOf } from "@/lib/shop-time"
 
 const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff", "calendar-rules"]
 
@@ -141,7 +142,10 @@ export function CrmDashboard() {
       body: JSON.stringify({
         productId,
         quantity,
-        collectionDate: collectionDate.toISOString(),
+        // The day the user clicked, as a plain calendar day. Sending an
+        // instant instead would carry this browser's timezone to the server,
+        // where a London midnight reads as the previous day in UTC.
+        collectionDay: shopDayOf(collectionDate),
         customerName: customer.name,
         customerEmail: customer.email,
         customerPhone: customer.phone,
