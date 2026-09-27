@@ -33,5 +33,21 @@ export function redactStateFor(role: StaffRole, state: DashboardState): Dashboar
           // the UI, and there is no figure in it to read.
           { total: 0, paid: 0, refunded: 0, state: "Unpaid" as const, events: [] },
     })),
+    // Weddings carry the same two things as an order — a named customer and a
+    // ledger — and were being sent whole. The Kitchen screen lists them so the
+    // bakes appear on the calendar; it does not need to know who is marrying or
+    // what they still owe.
+    weddings: state.weddings.map((wedding) => ({
+      ...wedding,
+      customer: seesCustomers ? wedding.customer : null,
+      payment: seesMoney
+        ? wedding.payment
+        : { total: 0, paid: 0, refunded: 0, state: "Unpaid" as const, events: [] },
+      // Derived from the quote, so they restate the total that was just removed.
+      depositDue: seesMoney ? wedding.depositDue : 0,
+      outstanding: seesMoney ? wedding.outstanding : 0,
+      currentQuote: seesMoney ? wedding.currentQuote : null,
+      quotes: seesMoney ? wedding.quotes : [],
+    })),
   }
 }

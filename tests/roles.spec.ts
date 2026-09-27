@@ -266,6 +266,62 @@ test.describe("a role lands somewhere it can actually use", () => {
   })
 })
 
+test.describe("the kitchen is not sent what it may not see", () => {
+  test("wedding customers and money are stripped, not merely hidden", async ({ page }) => {
+    await resetDemoData(page)
+    await signInAs(page, "Admin")
+    // A wedding with a customer, a quote and a payment on it.
+    const created = await page.request.post("/api/weddings", {
+      data: {
+        customerName: "Ada Fairweather",
+        customerEmail: "ada@example.com",
+        customerPhone: "07700 900222",
+        eventDay: "2027-07-10",
+        venue: "The Orangery",
+        guestCount: 90,
+      },
+    })
+    const { weddingId } = await created.json()
+    expect(weddingId, "the enquiry should have been created").toBeTruthy()
+    await page.request.post(`/api/weddings/${weddingId}`, {
+      data: {
+        action: "quote",
+        packageId: "classico-tray",
+        guestCount: 90,
+        adjustments: [],
+        tiers: [{ variantId: "mini-classico", quantity: 2 }],
+      },
+    })
+    await page.request.post(`/api/weddings/${weddingId}`, {
+      data: { action: "pay", amount: 7750 },
+    })
+
+    // Admin sees it all.
+    const asAdmin = (await readState(page)).weddings.find((w) => w.id === weddingId)!
+    expect(asAdmin.customer?.name).toBe("Ada Fairweather")
+    expect(asAdmin.payment.total).toBeGreaterThan(0)
+
+    // Kitchen is sent the wedding — the bakes belong on its calendar — with the
+    // customer and every figure removed before it leaves the server.
+    await signInAs(page, "Kitchen")
+    const asKitchen = (await readState(page)).weddings.find((w) => w.id === weddingId)!
+    expect(asKitchen).toBeDefined()
+    expect(asKitchen.customer).toBeNull()
+    expect(asKitchen.payment.total).toBe(0)
+    expect(asKitchen.payment.paid).toBe(0)
+    expect(asKitchen.payment.events).toEqual([])
+    expect(asKitchen.outstanding).toBe(0)
+    expect(asKitchen.depositDue).toBe(0)
+    expect(asKitchen.currentQuote).toBeNull()
+    expect(asKitchen.quotes).toEqual([])
+
+    // The raw payload carries no trace of the name either.
+    const raw = await (await page.request.get("/api/state")).text()
+    expect(raw).not.toContain("Ada Fairweather")
+    expect(raw).not.toContain("ada@example.com")
+  })
+})
+
 test.describe("who did what", () => {
   test("the actor on a status change is the signed-in user, not a default", async ({ page }) => {
     await resetDemoData(page)
