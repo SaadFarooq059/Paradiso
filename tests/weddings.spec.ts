@@ -7,6 +7,7 @@ import {
   signInAs,
 } from "./support"
 import { addShopDays, shopDayOf } from "@/lib/shop-time"
+import { weddingPaymentLabel } from "@/lib/weddings"
 
 /**
  * The wedding pipeline, and the two decisions that are easy to get wrong.
@@ -301,6 +302,18 @@ test.describe("money reuses the order ledger", () => {
     await quoteIt(page, id, [{ variantId: "mini-classico", quantity: 2 }])
     const result = await weddingAction(page, id, "pay", { amount: 78001 })
     expect(result.body.tone).toBe("error")
+  })
+})
+
+test.describe("payment wording", () => {
+  test("a wedding with its deposit paid is not called Unpaid", async ({ page }) => {
+    // The order-side label only knows "paid in full", which is wrong for a
+    // wedding paid in stages — and it said so on screen.
+    expect(weddingPaymentLabel(78000, 0, 0, 19500)).toBe("Nothing paid yet")
+    expect(weddingPaymentLabel(78000, 19500, 0, 19500)).toBe("Deposit paid")
+    expect(weddingPaymentLabel(78000, 5000, 0, 19500)).toBe("Part paid")
+    expect(weddingPaymentLabel(78000, 78000, 0, 19500)).toBe("Paid in full")
+    expect(weddingPaymentLabel(78000, 78000, 78000, 19500)).toBe("Refunded")
   })
 })
 

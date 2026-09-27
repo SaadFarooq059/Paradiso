@@ -15,6 +15,7 @@ import {
   DEAD_STAGES,
   WEDDING_PROGRESSION,
   WEDDING_STAGE_LABEL,
+  weddingPaymentLabel,
   type WeddingStage,
 } from "@/lib/weddings"
 import type { CalendarSettings, ProductVariant, Wedding, WeddingPackage } from "@/lib/types"
@@ -504,7 +505,14 @@ function MoneyCard({
               The same ledger orders use — one place for takings and refunds.
             </CardDescription>
           </div>
-          <Badge variant="outline">{wedding.payment.state}</Badge>
+          <Badge variant="outline">
+            {weddingPaymentLabel(
+              wedding.payment.total,
+              wedding.payment.paid,
+              wedding.payment.refunded,
+              wedding.depositDue
+            )}
+          </Badge>
         </div>
       </CardHeader>
 

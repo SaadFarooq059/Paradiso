@@ -138,3 +138,24 @@ export function outstandingAmount(total: number, paid: number, refunded: number)
 export function amendmentDelta(previousTotal: number, newTotal: number): number {
   return newTotal - previousTotal
 }
+
+/**
+ * What to call a wedding's payment state.
+ *
+ * The order-side paymentStateOf only knows "paid in full" or not, which is right
+ * for a counter transaction settled in one go and wrong here: a wedding with its
+ * deposit paid and a balance to come is not "Unpaid", and saying so on the
+ * screen is simply untrue.
+ */
+export function weddingPaymentLabel(
+  total: number,
+  paid: number,
+  refunded: number,
+  depositDue: number
+): string {
+  if (refunded > 0) return refunded >= paid ? "Refunded" : "Partially refunded"
+  if (total > 0 && paid >= total) return "Paid in full"
+  if (depositDue > 0 && paid >= depositDue) return "Deposit paid"
+  if (paid > 0) return "Part paid"
+  return "Nothing paid yet"
+}
