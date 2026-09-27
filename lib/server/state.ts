@@ -145,6 +145,7 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
     priceAmount: variant.priceAmount,
+    priceEstimated: variant.priceEstimated,
   }))
 
   const serializedStaff: StaffMember[] = staff.map((member) => ({

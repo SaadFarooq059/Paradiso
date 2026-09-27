@@ -27,9 +27,9 @@ const SUPREMA = "suprema-classico"
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInViaApi(page)
-  // Suprema and Grande have no published price, and an unpriced product cannot
-  // be ordered. These specs are about the kitchen, not the till, so they set a
-  // working price first.
+  // The larger sizes carry estimated prices, which the client may yet correct.
+  // These specs assert exact money, so they pin the two they use rather than
+  // depending on an estimate that is expected to move.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })
@@ -174,30 +174,54 @@ test.describe("stock is NOT moved by a refund", () => {
 })
 
 test.describe("an unpriced product cannot be sold", () => {
-  test("ordering one is refused rather than totalling nothing", async ({ page }) => {
-    // Part of the range has no published price. Selling one would write a £0.00
-    // order and call it agreed — the same silent-zero that priced a live wedding
-    // quote at £80 instead of £860.
+  test("every seeded product has a price", async ({ page }) => {
+    // The larger sizes are estimated rather than unpriced, so the whole range
+    // can be ordered. An unpriced one would be a regression, not a placeholder.
     const state = await readState(page)
-    const unpriced = state.variants.find((v) => v.priceAmount === 0)
-    expect(unpriced, "the range should still contain an unpriced product").toBeDefined()
+    expect(state.variants.filter((v) => v.priceAmount === 0)).toHaveLength(0)
+    expect(state.variants.filter((v) => v.priceEstimated).length).toBeGreaterThan(0)
+  })
 
-    const result = await confirmOrder(page, unpriced!.id, 1)
+  test("ordering one that has no price is refused rather than totalling nothing", async ({
+    page,
+  }) => {
+    // Selling it would write a £0.00 order and call it agreed — the same silent
+    // zero that priced a live wedding quote at £80 instead of £860. Created
+    // here rather than found, because nothing in the seeded range is unpriced.
+    await priceVariant(page, "mini-biscoff", 0)
+
+    const result = await confirmOrder(page, "mini-biscoff", 1)
     expect(result.tone).toBe("error")
     expect(result.message).toContain("no published price")
     expect((await readState(page)).orders).toHaveLength(0)
   })
 
-  test("pricing it first lets the order through", async ({ page }) => {
-    const state = await readState(page)
-    const unpriced = state.variants.find((v) => v.priceAmount === 0)!
+  test("pricing it lets the order through", async ({ page }) => {
+    await priceVariant(page, "mini-biscoff", 0)
+    expect((await confirmOrder(page, "mini-biscoff", 1)).tone).toBe("error")
 
-    await priceVariant(page, unpriced.id, 2200)
-    const result = await confirmOrder(page, unpriced.id, 1)
+    await priceVariant(page, "mini-biscoff", 2200)
+    const result = await confirmOrder(page, "mini-biscoff", 1)
 
     expect(result.tone).toBe("success")
     const after = await readState(page)
     expect(after.orders.find((o) => o.id === result.orderId)?.payment.total).toBe(2200)
+  })
+
+  test("an estimated price is still an estimate after an unrelated edit", async ({ page }) => {
+    // The flag must survive a save that does not touch the price, or the marker
+    // quietly disappears the first time someone fixes a typo in the name.
+    const before = (await readState(page)).variants.find((v) => v.id === "suprema-classico")!
+    expect(before.priceEstimated).toBe(true)
+
+    const response = await page.request.post("/api/variants", {
+      data: { ...before, description: `${before.description} ` },
+    })
+    expect(response.ok()).toBeTruthy()
+
+    const after = (await readState(page)).variants.find((v) => v.id === "suprema-classico")!
+    expect(after.priceEstimated).toBe(true)
+    expect(after.priceAmount).toBe(before.priceAmount)
   })
 })
 

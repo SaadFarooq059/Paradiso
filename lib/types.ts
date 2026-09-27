@@ -36,6 +36,8 @@ export interface ProductVariant {
    * money must not be approximate.
    */
   priceAmount: number
+  /** True when priceAmount is our extrapolation, not the client's own figure. */
+  priceEstimated?: boolean
 }
 
 /** JavaScript getDay() numbering: 0 = Sunday ... 6 = Saturday. */

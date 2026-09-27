@@ -144,6 +144,7 @@ async function readVariant(tx: Tx, variantId: string): Promise<ProductVariant | 
     unitsPerBatch: variant.unitsPerBatch,
     leadTimeDays: variant.leadTimeDays,
     priceAmount: variant.priceAmount,
+    priceEstimated: variant.priceEstimated,
   }
 }
 

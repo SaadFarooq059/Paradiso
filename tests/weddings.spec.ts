@@ -74,9 +74,9 @@ async function findWedding(page: Page, id: string) {
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInAs(page, "Admin")
-  // Suprema and Grande have no published price, and an unpriced product cannot
-  // be ordered. These specs are about the kitchen, not the till, so they set a
-  // working price first.
+  // The larger sizes carry estimated prices, which the client may yet correct.
+  // These specs assert exact money, so they pin the two they use rather than
+  // depending on an estimate that is expected to move.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })

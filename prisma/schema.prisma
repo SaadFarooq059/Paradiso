@@ -134,37 +134,41 @@ model Ingredient {
 
 /// A sellable product (Mini / Grande / Suprema Classico).
 model ProductVariant {
-  id            String  @id
-  name          String
-  description   String
-  servings      String
+  id             String  @id
+  name           String
+  description    String
+  servings       String
   /// Soft delete: the Recipes screen can remove a variant, but orders that
   /// already reference it must keep rendering their product name and history.
-  archived      Boolean @default(false)
+  archived       Boolean @default(false)
   /// Display position on the New Order and Recipes screens. Same reason as
   /// Staff.sortOrder: the in-memory array had an order (Mini, Grande, Suprema)
   /// that the New Order form also used to pick its default selection, and row
   /// order out of a database is arbitrary without an explicit column.
-  sortOrder     Int     @default(0)
+  sortOrder      Int     @default(0)
   /// Working days needed between starting production and handing the order over.
   /// productionDate = collectionDate - leadTimeDays, derived on read rather than
   /// stored, so changing a recipe's lead time re-plans orders that have not been
   /// made yet. Note this is deliberately NOT frozen per order the way
   /// consumedIngredients is: that snapshot records what was physically used and
   /// must never move, whereas a lead time is a forward-looking plan.
-  leadTimeDays  Int     @default(2)
+  leadTimeDays   Int     @default(2)
   /// How many finished units one batch produces. The kitchen works in batches,
   /// not units — one batch makes two 12-inch cakes whether one was ordered or
   /// two — so ingredient demand is batches x the batch recipe, never units x a
   /// per-unit recipe. Named unitsPerBatch rather than `yield` because that word
   /// is awkward to destructure in JS.
-  unitsPerBatch Int     @default(1)
-  /// PLACEHOLDER PRICE, in pence. The client has not supplied real prices, the
-  /// same way they had not supplied batch yields — these are plausible numbers
-  /// so totals and refunds have something to work from, and the Recipes screen
-  /// labels them as placeholder. Integer pence, never a float: 0.1 + 0.2 is not
-  /// 0.3 and money must not be approximate.
-  priceAmount   Int     @default(0)
+  unitsPerBatch  Int     @default(1)
+  /// The retail price, in pence. Integer pence, never a float: 0.1 + 0.2 is not
+  /// 0.3 and money must not be approximate. Zero means nobody has set one, and
+  /// an order for such a product is refused rather than sold for nothing.
+  priceAmount    Int     @default(0)
+  /// True when priceAmount is our extrapolation rather than the client's own
+  /// figure. Only the Mini-misu prices are published; the larger sizes are
+  /// estimated from them, and every screen that shows the price says so. Kept as
+  /// a flag rather than inferred from the number because an estimate that
+  /// happens to be right is still an estimate.
+  priceEstimated Boolean @default(false)
 
   recipeItems RecipeItem[]
   orderItems  OrderItem[]

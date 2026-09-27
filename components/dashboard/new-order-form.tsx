@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge"
 import { ProductArt } from "@/components/dashboard/product-art"
 import { INGREDIENT_INFO, INGREDIENT_ORDER } from "@/lib/mock-data"
+import { formatMoney } from "@/lib/payments"
 import { formatDateLong, UK_LOCALE } from "@/lib/format-date"
 import { isCollectionDateSelectable } from "@/lib/production-schedule"
 import type { CalendarSettings, Order, ProductVariant } from "@/lib/types"
@@ -278,7 +279,21 @@ export function NewOrderForm({
 
             {selectedVariant && (
               <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-4 @3xl:col-start-2 @3xl:row-start-2 @6xl:col-start-3 @6xl:row-start-1">
-                <span className="text-sm font-medium text-foreground">{selectedVariant.name}</span>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground">{selectedVariant.name}</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+                    {formatMoney(selectedVariant.priceAmount)}
+                  </span>
+                </div>
+                {selectedVariant.priceEstimated && (
+                  // The order total is worked out from this and frozen when the
+                  // order is taken, so the one moment that matters is before it
+                  // is agreed — not on a screen nobody opens mid-call.
+                  <p className="text-xs font-medium text-warning">
+                    Estimated price, pending the client&apos;s confirmation. Check before quoting
+                    it.
+                  </p>
+                )}
                 <FieldDescription>
                   {selectedVariant.description} One batch makes {selectedVariant.unitsPerBatch}{" "}
                   {selectedVariant.unitsPerBatch === 1 ? "cake" : "cakes"} and draws:
