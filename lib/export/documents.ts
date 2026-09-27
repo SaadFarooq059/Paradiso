@@ -1,3 +1,4 @@
+import { ROLE_LABEL } from "@/lib/auth/roles"
 import { formatDateTime } from "@/lib/format-date"
 import { INGREDIENT_INFO, INGREDIENT_ORDER, ORDER_STATUS_ORDER } from "@/lib/mock-data"
 import { productionDateForOrder } from "@/lib/production-schedule"
@@ -187,7 +188,7 @@ export function analyticsDocument(
       ],
       rows: staff.map((member) => [
         member.name,
-        member.role === "admin" ? "Admin" : "Staff",
+        ROLE_LABEL[member.role],
         member.orderCount,
       ]),
       emptyMessage: "No staff on record.",

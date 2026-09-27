@@ -60,7 +60,12 @@ export interface CalendarSettings {
 
 export type StaffName = string
 
-export type StaffRole = "admin" | "staff"
+/**
+ * Re-exported so there is exactly one definition. The capability matrix owns it,
+ * because the roles only mean anything in terms of what they may do.
+ */
+export type { StaffRole } from "@/lib/auth/roles"
+import type { StaffRole } from "@/lib/auth/roles"
 
 /**
  * Where an order is in the fulfilment lifecycle — exactly one at a time.
@@ -190,6 +195,10 @@ export interface StaffMember {
   name: StaffName
   role: StaffRole
   orderCount: number
+  /** Sign-in address. Absent only on the seed roster constant. */
+  email?: string
+  /** A suspended account keeps its history but cannot sign in. */
+  active?: boolean
 }
 
 export interface RestockEntry {

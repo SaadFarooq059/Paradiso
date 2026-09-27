@@ -1,42 +1,45 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, timingSafeEqual } from "node:crypto"
 import { cookies } from "next/headers"
+import bcrypt from "bcryptjs"
 
-import { INITIAL_STAFF } from "@/lib/mock-data"
+import { prisma } from "@/lib/prisma"
+import { isStaffRole, type StaffRole } from "@/lib/auth/roles"
 import type { StaffMember } from "@/lib/types"
 
 /**
- * A demo gate, not an authentication system.
+ * Per-user accounts.
  *
- * The app is going on a public URL with dummy data in it, and the point of this
- * layer is only that a passer-by cannot read or change that data. It is one
- * shared password checked server-side, not per-user accounts: everyone who knows
- * the password picks who they are signing in as from the seed roster, exactly as
- * before. Roles still come from that roster, so "admin" continues to mean what it
- * meant — it is just no longer self-declared by the browser.
+ * This replaces a single shared DEMO_PASSWORD under which everyone picked who
+ * they wanted to be from a roster. That was fine while the roles were cosmetic
+ * and is not fine now that they are enforced: one shared secret that lets its
+ * holder become any user, including an Admin, is a master key. It cannot coexist
+ * with role enforcement — any boundary is one sign-in away from being bypassed —
+ * so it is gone rather than kept as a fallback.
  *
- * What it deliberately is NOT: per-user credentials, password hashing with a
- * work factor, rotation, lockout, or a session store. Anything real replaces
- * this wholesale rather than building on it.
+ * Passwords are bcrypt at cost 12, which is chosen to be slow. Verifying is the
+ * only thing that can be done with a stored hash; there is no path back to the
+ * password, here or anywhere else.
  *
- * The session cookie is `staffId.signature`, signed with an HMAC keyed on the
- * shared password itself. That means no second secret to configure, and it means
- * changing the password invalidates every existing session for free. The cookie
- * is httpOnly so page scripts cannot read it, and it is signed so it cannot be
- * forged by simply typing one into devtools — which is what made the old
- * sessionStorage version decorative.
+ * The cookie is `staffId.issuedAt.signature`, signed with AUTH_SECRET. The
+ * signature covers a fingerprint of the account's current password hash, so
+ * changing a password — or suspending the account — invalidates every session
+ * that account already had, without needing a session table to sweep.
  */
 
 const COOKIE_NAME = "paradiso_session"
-/** Eight hours: long enough for a working day, short enough to not linger. */
+/** Eight hours: a working day, and no longer. */
 const MAX_AGE_SECONDS = 60 * 60 * 8
+const BCRYPT_COST = 12
 
-export function demoPassword(): string | null {
-  const value = process.env.DEMO_PASSWORD
-  return value && value.length > 0 ? value : null
+export function authSecret(): string | null {
+  const value = process.env.AUTH_SECRET
+  // A short secret is worse than an obviously missing one, because it looks
+  // configured. Refuse it and fail closed.
+  return value && value.length >= 32 ? value : null
 }
 
-function sign(staffId: string, password: string): string {
-  return createHmac("sha256", password).update(staffId).digest("hex")
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_COST)
 }
 
 /** Constant-time compare, so a wrong value cannot be narrowed down by timing. */
@@ -47,21 +50,72 @@ function matches(a: string, b: string): boolean {
   return timingSafeEqual(left, right)
 }
 
-export function verifyPassword(candidate: string): boolean {
-  const expected = demoPassword()
-  if (!expected) return false
-  return matches(candidate, expected)
+/**
+ * Ties a session to the credential that created it. Only a fingerprint: the
+ * cookie never carries the hash itself, and the hash never leaves the server.
+ */
+function credentialFingerprint(passwordHash: string, active: boolean): string {
+  return createHash("sha256").update(`${passwordHash}:${active}`).digest("hex").slice(0, 16)
 }
 
-/** The seed roster is the list of people who may sign in. */
-export function findStaff(staffId: string): StaffMember | null {
-  return INITIAL_STAFF.find((member) => member.id === staffId) ?? null
+function sign(staffId: string, issuedAt: number, fingerprint: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update(`${staffId}.${issuedAt}.${fingerprint}`)
+    .digest("hex")
 }
 
-export function sessionCookie(staffId: string, password: string) {
+export interface SignedInStaff extends StaffMember {
+  email: string
+}
+
+function toMember(row: {
+  id: string
+  name: string
+  role: string
+  orderCount: number
+  email: string
+}): SignedInStaff {
+  return {
+    id: row.id,
+    name: row.name,
+    // A row whose role the app does not recognise gets the least privilege
+    // rather than the benefit of the doubt.
+    role: isStaffRole(row.role) ? (row.role as StaffRole) : "ShopFloor",
+    orderCount: row.orderCount,
+    email: row.email,
+  }
+}
+
+/**
+ * Checks an email and password against the database.
+ *
+ * Deliberately gives the same answer for "no such account" and "wrong password".
+ * Distinguishing them turns the sign-in form into a way to discover which
+ * addresses are real. A hash is compared even when no account matched, so the
+ * two paths take about the same time.
+ */
+const ABSENT_ACCOUNT_HASH = "$2b$12$.invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin"
+
+export async function verifyCredentials(
+  email: string,
+  password: string
+): Promise<SignedInStaff | null> {
+  const row = await prisma.staff.findUnique({ where: { email: email.trim().toLowerCase() } })
+  const ok = await bcrypt.compare(password, row?.passwordHash ?? ABSENT_ACCOUNT_HASH)
+  if (!row || !ok || !row.active) return null
+  await prisma.staff.update({ where: { id: row.id }, data: { lastSignInAt: new Date() } })
+  return toMember(row)
+}
+
+export async function sessionCookie(staffId: string) {
+  const secret = authSecret()
+  const row = await prisma.staff.findUnique({ where: { id: staffId } })
+  if (!secret || !row) throw new Error("Cannot issue a session without AUTH_SECRET and an account.")
+  const issuedAt = Date.now()
+  const fingerprint = credentialFingerprint(row.passwordHash, row.active)
   return {
     name: COOKIE_NAME,
-    value: `${staffId}.${sign(staffId, password)}`,
+    value: `${staffId}.${issuedAt}.${sign(staffId, issuedAt, fingerprint, secret)}`,
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
@@ -71,38 +125,48 @@ export function sessionCookie(staffId: string, password: string) {
 }
 
 export function clearedSessionCookie() {
-  return { name: COOKIE_NAME, value: "", httpOnly: true, path: "/", maxAge: 0 }
+  return {
+    name: COOKIE_NAME,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  }
 }
 
 /**
- * The signed-in staff member, or null.
+ * The signed-in user, or null.
  *
- * Returns null when DEMO_PASSWORD is unset: without a password there is nothing
- * to sign a cookie with, so no session can be valid. Failing closed means a
- * misconfigured deployment locks everyone out rather than letting everyone in.
+ * Reads the account from the database every time rather than trusting what the
+ * cookie says about it. The cookie proves *who*; it is not allowed to assert a
+ * role, because a role is exactly the thing worth forging.
  */
-export async function readSession(): Promise<StaffMember | null> {
-  const password = demoPassword()
-  if (!password) return null
+export async function readSession(): Promise<SignedInStaff | null> {
+  const secret = authSecret()
+  if (!secret) return null
 
   const raw = (await cookies()).get(COOKIE_NAME)?.value
   if (!raw) return null
 
-  const separator = raw.lastIndexOf(".")
-  if (separator <= 0) return null
+  const parts = raw.split(".")
+  if (parts.length !== 3) return null
+  const [staffId, issuedAtRaw, signature] = parts
 
-  const staffId = raw.slice(0, separator)
-  const signature = raw.slice(separator + 1)
-  if (!matches(signature, sign(staffId, password))) return null
+  const issuedAt = Number(issuedAtRaw)
+  if (!Number.isFinite(issuedAt)) return null
+  if (Date.now() - issuedAt > MAX_AGE_SECONDS * 1000) return null
 
-  return findStaff(staffId)
+  const row = await prisma.staff.findUnique({ where: { id: staffId } })
+  if (!row || !row.active) return null
+
+  const expected = sign(staffId, issuedAt, credentialFingerprint(row.passwordHash, row.active), secret)
+  if (!matches(signature, expected)) return null
+
+  return toMember(row)
 }
 
-export async function requireSession(): Promise<StaffMember | null> {
+export async function requireSession(): Promise<SignedInStaff | null> {
   return readSession()
-}
-
-export async function requireAdmin(): Promise<StaffMember | null> {
-  const member = await readSession()
-  return member?.role === "admin" ? member : null
 }

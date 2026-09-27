@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 
+import { can } from "@/lib/auth/roles"
+
 import { resetDemoData } from "@/lib/server/admin-service"
 import { mutationResponse } from "@/lib/server/respond"
 import { readSession } from "@/lib/server/session"
@@ -58,9 +60,9 @@ export async function POST(request: Request) {
       { status: 401 }
     )
   }
-  if (member.role !== "admin") {
+  if (!can(member.role, "settings:manage")) {
     return NextResponse.json(
-      { message: "Admins only.", tone: "error" as const },
+      { message: "Your role can't reset the demo data.", tone: "error" as const },
       { status: 403 }
     )
   }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { hashPassword } from "@/lib/server/session"
 import { loadDashboardState } from "@/lib/server/state"
 import type { MutationResult } from "@/lib/server/order-service"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
@@ -55,17 +56,76 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
  * OrderItem foreign key of every past order that used the product.
  */
 export async function deleteVariant(id: string): Promise<MutationResult> {
+  // A recipe that is not there is a bad request, not a crash. Prisma throws on
+  // update-not-found, which surfaced as a 500 for what is an ordinary mistake.
+  const existing = await prisma.productVariant.findUnique({ where: { id } })
+  if (!existing) {
+    return { state: await loadDashboardState(), message: "No such recipe.", tone: "error" }
+  }
   await prisma.productVariant.update({ where: { id }, data: { archived: true } })
   return { state: await loadDashboardState(), message: "Recipe removed", tone: "success" }
 }
 
-export async function saveStaffMember(member: StaffMember): Promise<MutationResult> {
+/**
+ * Creates or updates a staff account.
+ *
+ * A password is required to create one and optional afterwards: an admin should
+ * not have to retype it to rename someone, and leaving it blank on an edit means
+ * "leave the password alone" rather than "clear it". It is hashed here and never
+ * held anywhere in plaintext, not even for the length of this function.
+ */
+export async function saveStaffMember(
+  member: StaffMember,
+  password?: string
+): Promise<MutationResult> {
+  const email = member.email?.trim().toLowerCase() ?? ""
+  if (!email) {
+    return { state: await loadDashboardState(), message: "An email is required.", tone: "error" }
+  }
+
+  // Unique per account, because it is the sign-in identity and two people
+  // sharing one would make "who did this" unanswerable.
+  const clash = await prisma.staff.findFirst({ where: { email, NOT: { id: member.id } } })
+  if (clash) {
+    return {
+      state: await loadDashboardState(),
+      message: `${email} is already used by ${clash.name}.`,
+      tone: "error",
+    }
+  }
+
+  const existing = await prisma.staff.findUnique({ where: { id: member.id } })
+  if (!existing && (!password || password.length < 8)) {
+    return {
+      state: await loadDashboardState(),
+      message: "A new account needs a password of at least 8 characters.",
+      tone: "error",
+    }
+  }
+  if (password && password.length > 0 && password.length < 8) {
+    return {
+      state: await loadDashboardState(),
+      message: "A password must be at least 8 characters.",
+      tone: "error",
+    }
+  }
+
+  const passwordHash = password && password.length > 0 ? await hashPassword(password) : null
+
   await prisma.$transaction(async (tx: Tx) => {
-    const existing = await tx.staff.findUnique({ where: { id: member.id } })
     if (existing) {
       await tx.staff.update({
         where: { id: member.id },
-        data: { name: member.name, role: member.role, orderCount: member.orderCount },
+        data: {
+          name: member.name,
+          role: member.role,
+          orderCount: member.orderCount,
+          email,
+          active: member.active ?? true,
+          // Changing the hash also invalidates that account's existing sessions,
+          // because the session signature covers a fingerprint of it.
+          ...(passwordHash ? { passwordHash } : {}),
+        },
       })
       return
     }
@@ -77,6 +137,9 @@ export async function saveStaffMember(member: StaffMember): Promise<MutationResu
         role: member.role,
         orderCount: member.orderCount,
         sortOrder: (last?.sortOrder ?? -1) + 1,
+        email,
+        active: member.active ?? true,
+        passwordHash: passwordHash!,
       },
     })
   })
@@ -85,6 +148,10 @@ export async function saveStaffMember(member: StaffMember): Promise<MutationResu
 }
 
 export async function deleteStaffMember(id: string): Promise<MutationResult> {
+  const existing = await prisma.staff.findUnique({ where: { id } })
+  if (!existing) {
+    return { state: await loadDashboardState(), message: "No such staff member.", tone: "error" }
+  }
   const assignments = await prisma.productionAssignment.count({ where: { staffId: id } })
   if (assignments > 0) {
     // In-memory, removing a staff member just dropped them from an array and the

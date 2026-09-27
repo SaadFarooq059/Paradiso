@@ -74,8 +74,10 @@ export const INITIAL_STOCK: Record<IngredientKey, number> = {
 }
 
 export const INITIAL_STAFF: StaffMember[] = [
-  { id: "aisha", name: "Aisha", role: "admin", orderCount: 0 },
-  { id: "tom", name: "Tom", role: "staff", orderCount: 0 },
+  { id: "aisha", name: "Aisha Bello", role: "Admin", orderCount: 0 },
+  { id: "tom", name: "Tom Whitfield", role: "Manager", orderCount: 0 },
+  { id: "marco", name: "Marco Ferrari", role: "Kitchen", orderCount: 0 },
+  { id: "nadia", name: "Nadia Haddad", role: "ShopFloor", orderCount: 0 },
 ]
 
 /**

@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test"
 
+import { DEMO_ACCOUNTS } from "@/lib/auth/demo-accounts"
+import type { StaffRole } from "@/lib/auth/roles"
 import { shopDayOf } from "@/lib/shop-time"
 
 /**
@@ -42,13 +44,34 @@ export async function resetDemoData(page: Page) {
  * Signs in over the API. page.request shares the page's cookie jar, so the
  * session cookie this sets authenticates both later API calls and the UI.
  */
-export async function signInViaApi(page: Page, staffId = "aisha") {
-  const password = process.env.DEMO_PASSWORD
-  expect(password, "DEMO_PASSWORD must be set for the suite to sign in").toBeTruthy()
+/**
+ * Signs in as one of the demo accounts. page.request shares the page's cookie
+ * jar, so the session authenticates both later API calls and the UI.
+ *
+ * Takes a role rather than a staff id: what a test cares about is which
+ * permissions it is acting with, and naming the role says that outright.
+ */
+export async function signInAs(page: Page, role: StaffRole = "Admin") {
+  const account = DEMO_ACCOUNTS.find((a) => a.role === role)
+  expect(account, `no demo account seeded for ${role}`).toBeTruthy()
   const response = await page.request.post("/api/auth", {
-    data: { staffId, password },
+    data: { email: account!.email, password: account!.password },
   })
-  expect(response.ok(), "sign-in should succeed with the configured demo password").toBeTruthy()
+  expect(
+    response.ok(),
+    `sign-in should succeed for ${role} (${account!.email}) — is the database seeded?`
+  ).toBeTruthy()
+  return account!
+}
+
+/** Most specs only need to be signed in as someone who can do everything. */
+export async function signInViaApi(page: Page) {
+  return signInAs(page, "Admin")
+}
+
+/** Drops the session, for testing what an unauthenticated caller gets. */
+export async function signOut(page: Page) {
+  await page.request.delete("/api/auth")
 }
 
 export interface DashboardState {
@@ -64,12 +87,13 @@ export interface DashboardState {
     shortages: { ingredient: string; shortBy: number }[]
     consumedIngredients: Record<string, number>
     statusHistory: { status: string; at: number; note?: string; actorName: string | null }[]
+    customer: { id: string; name: string; email: string; phone: string | null } | null
     payment: {
       total: number
       paid: number
       refunded: number
       state: string
-      events: { id: number; kind: string; amount: number }[]
+      events: { id: number; kind: string; amount: number; actorName: string | null }[]
     }
     emails: {
       id: number

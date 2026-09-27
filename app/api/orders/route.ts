@@ -1,7 +1,7 @@
 import { createOrder } from "@/lib/server/order-service"
 import { badRequest, mutationResponse } from "@/lib/server/respond"
 
-import { withSession } from "@/lib/server/guard"
+import { withCapability } from "@/lib/server/guard"
 import { isShopDay } from "@/lib/shop-time"
 
 export const dynamic = "force-dynamic"
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic"
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export async function POST(request: Request) {
-  return withSession(async (member) => {
+  return withCapability("orders:create")(async (member) => {
   const body = await request.json().catch(() => null)
   const productId = typeof body?.productId === "string" ? body.productId : null
   const quantity = Number.parseInt(String(body?.quantity), 10)

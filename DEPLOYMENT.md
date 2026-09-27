@@ -8,7 +8,7 @@ process on the same port. There is no separate backend to deploy.
 | Variable | Required | What it is |
 | --- | --- | --- |
 | `DATABASE_URL` | **Yes** | Postgres connection string, e.g. `postgresql://user:password@host:5432/paradiso?schema=public`. There is no fallback — the app throws on startup if it is missing, rather than quietly connecting somewhere unintended. |
-| `DEMO_PASSWORD` | **Yes** | The single shared password for the demo gate, checked server-side. If unset, sign-in is **disabled** and nobody can get in — it fails closed, so a misconfigured deployment locks everyone out rather than letting everyone in. |
+| `AUTH_SECRET` | **Yes** | Signs session cookies. At least 32 characters of random data; generate with `openssl rand -base64 48`. A shorter value is refused rather than accepted, so a half-configured deployment fails closed and nobody can sign in — which is the safe direction. Changing it signs everyone out. |
 | `RESET_TOKEN` | No | Bearer token for `POST /api/reset` out of band (the test suite uses it). If unset, that path does not exist and only a signed-in admin can reset. |
 
 Two optional ones exist for tooling:
@@ -22,6 +22,23 @@ If the host requires a pooled connection (most serverless Postgres does), point
 `DATABASE_URL` at the **pooled** endpoint. If migrations then fail — poolers
 usually cannot run DDL — give the migration step the **direct** endpoint instead,
 which is what `db:deploy` below wants.
+
+## Accounts and roles
+
+Sign-in is per-user: an email and a bcrypt password hash on each `Staff` row,
+with one of four roles — Admin, Manager, Kitchen, Shop-floor. The roles are
+enforced on the API routes through the capability matrix in
+`lib/auth/roles.ts`; the sidebar reads the same matrix so the two cannot drift.
+
+There is no shared password any more. The old `DEMO_PASSWORD` let its holder
+sign in as any staff member, Admin included, which is a master key and cannot
+coexist with enforced roles.
+
+**The four demo accounts are printed on the sign-in screen** so the client can
+switch roles and see the difference. That means anyone who can reach the URL can
+sign in as an Admin — intended for a demo, and the first thing to change before
+real use: set real passwords in Staff Management and remove
+`lib/auth/demo-accounts.ts` from the sign-in page.
 
 ## Migrations run during the build
 

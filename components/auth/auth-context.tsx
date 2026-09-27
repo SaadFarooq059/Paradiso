@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
 
+import type { Capability } from "@/lib/auth/roles"
 import type { StaffMember } from "@/lib/types"
 
 /**
@@ -20,7 +21,8 @@ interface AuthContextValue {
   isLoading: boolean
   /** True when the deployment has a password configured at all. */
   isConfigured: boolean
-  signIn: (staffId: string, password: string) => Promise<string | null>
+  signIn: (email: string, password: string) => Promise<string | null>
+  capabilities: Capability[]
   signOut: () => Promise<void>
 }
 
@@ -28,6 +30,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<StaffMember | null>(null)
+  const [capabilities, setCapabilities] = useState<Capability[]>([])
   const [isConfigured, setIsConfigured] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -36,9 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch("/api/auth", { cache: "no-store" })
       const payload = (await response.json()) as {
         currentUser: StaffMember | null
+        capabilities?: Capability[]
         configured: boolean
       }
       setCurrentUser(payload.currentUser)
+      setCapabilities(payload.capabilities ?? [])
       setIsConfigured(payload.configured)
     } catch {
       setCurrentUser(null)
@@ -52,21 +57,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh])
 
   /** Returns an error message, or null on success. */
-  async function signIn(staffId: string, password: string): Promise<string | null> {
+  async function signIn(email: string, password: string): Promise<string | null> {
     try {
       const response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId, password }),
+        body: JSON.stringify({ email, password }),
       })
       const payload = (await response.json().catch(() => ({}))) as {
         currentUser?: StaffMember
+        capabilities?: Capability[]
         message?: string
       }
       if (!response.ok || !payload.currentUser) {
         return payload.message ?? "Couldn't sign in."
       }
       setCurrentUser(payload.currentUser)
+      setCapabilities(payload.capabilities ?? [])
       return null
     } catch {
       return "Couldn't reach the server."
@@ -83,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoading, isConfigured, signIn, signOut }}>
+    <AuthContext.Provider value={{ currentUser, capabilities, isLoading, isConfigured, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

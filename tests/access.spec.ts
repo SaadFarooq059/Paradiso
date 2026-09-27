@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test"
 
-import { resetDemoData, signInViaApi } from "./support"
+import { resetDemoData, signInAs, signInViaApi } from "./support"
 
 /**
  * The demo gate.
@@ -68,10 +68,10 @@ test.describe("without a session", () => {
 })
 
 test.describe("with a session", () => {
-  test("a non-admin is refused the admin routes but can still read", async ({ page }) => {
+  test("a manager is refused the admin routes but can still read", async ({ page }) => {
     await resetDemoData(page)
-    // Tom is the seeded "staff" role, not an admin.
-    await signInViaApi(page, "tom")
+    // A Manager: real permissions, but not the shop's configuration.
+    await signInAs(page, "Manager")
 
     const state = await page.request.get("/api/state")
     expect(state.ok()).toBeTruthy()
@@ -88,7 +88,7 @@ test.describe("with a session", () => {
 
   test("an admin can reset from the sidebar without any token", async ({ page }) => {
     await resetDemoData(page)
-    await signInViaApi(page, "aisha")
+    await signInAs(page, "Admin")
 
     // No Authorization header: this is exactly what the sidebar button sends.
     const response = await page.request.post("/api/reset")

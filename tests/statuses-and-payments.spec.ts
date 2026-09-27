@@ -213,7 +213,7 @@ test.describe("status changes record who made them", () => {
 
     expect(history.map((event) => event.status)).toEqual(["Confirmed", "Scheduled"])
     for (const event of history) {
-      expect(event.actorName).toBe("Aisha")
+      expect(event.actorName).toBe("Aisha Bello")
     }
   })
 })

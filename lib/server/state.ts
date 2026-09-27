@@ -8,6 +8,7 @@ import {
   type StockRecord,
 } from "@/lib/stock-projection"
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
+import { isStaffRole } from "@/lib/auth/roles"
 import { paymentStateOf } from "@/lib/payments"
 import { TEMPLATE_FROM_DB } from "@/lib/server/email-service"
 
@@ -111,7 +112,9 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
   const serializedStaff: StaffMember[] = staff.map((member) => ({
     id: member.id,
     name: member.name,
-    role: member.role === "admin" ? "admin" : "staff",
+    role: isStaffRole(member.role) ? member.role : "ShopFloor",
+    email: member.email,
+    active: member.active,
     orderCount: member.orderCount,
   }))
 

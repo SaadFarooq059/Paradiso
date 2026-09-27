@@ -6,17 +6,18 @@ import { Pencil, Plus, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getStaffColor } from "@/lib/mock-data"
+import { ROLE_LABEL, ROLE_SUMMARY, STAFF_ROLES } from "@/lib/auth/roles"
 import type { StaffMember, StaffRole } from "@/lib/types"
 import { cn, slugify } from "@/lib/utils"
 
 interface StaffManagementPanelProps {
   staff: StaffMember[]
   currentUserId: string
-  onSave: (member: StaffMember) => void
+  onSave: (member: StaffMember, password: string) => void
   onDelete: (id: string) => void
 }
 
@@ -24,11 +25,20 @@ type FormState = {
   id: string
   name: string
   role: StaffRole
+  email: string
+  /** Blank on an edit means "leave the password alone". */
+  password: string
 }
 
 function toFormState(member: StaffMember | null): FormState {
-  if (!member) return { id: "", name: "", role: "staff" }
-  return { id: member.id, name: member.name, role: member.role }
+  if (!member) return { id: "", name: "", role: "ShopFloor", email: "", password: "" }
+  return {
+    id: member.id,
+    name: member.name,
+    role: member.role,
+    email: member.email ?? "",
+    password: "",
+  }
 }
 
 export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }: StaffManagementPanelProps) {
@@ -55,7 +65,16 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
       }
     }
 
-    onSave({ id, name: editing.name.trim(), role: editing.role, orderCount })
+    onSave(
+      {
+        id,
+        name: editing.name.trim(),
+        role: editing.role,
+        orderCount,
+        email: editing.email.trim(),
+      },
+      editing.password
+    )
     setEditing(null)
   }
 
@@ -96,14 +115,50 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
                   >
                     <SelectTrigger id="staff-role" className="w-full">
                       <SelectValue placeholder="Select a role">
-                        {(value: string | null) => (value === "admin" ? "Admin" : "Staff")}
+                        {(value: string | null) =>
+                          value ? ROLE_LABEL[value as StaffRole] : "Select a role"
+                        }
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="staff">Staff</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
+                      {STAFF_ROLES.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {ROLE_LABEL[role]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <FieldDescription>{ROLE_SUMMARY[editing.role]}</FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="staff-email">Email</FieldLabel>
+                  <Input
+                    id="staff-email"
+                    type="email"
+                    autoComplete="off"
+                    value={editing.email}
+                    onChange={(e) => setEditing({ ...editing, email: e.target.value })}
+                  />
+                  <FieldDescription>What they sign in with. One address per person.</FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="staff-password">
+                    {editing.id ? "New password" : "Password"}
+                  </FieldLabel>
+                  <Input
+                    id="staff-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={editing.password}
+                    onChange={(e) => setEditing({ ...editing, password: e.target.value })}
+                  />
+                  <FieldDescription>
+                    {editing.id
+                      ? "Leave blank to keep the current one. Setting a new password signs them out everywhere."
+                      : "At least 8 characters. Stored hashed — nobody, including an admin, can read it back."}
+                  </FieldDescription>
                 </Field>
               </div>
             </FieldGroup>
@@ -145,8 +200,8 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant={member.role === "admin" ? "default" : "outline"} className="font-normal">
-                    {member.role === "admin" ? "Admin" : "Staff"}
+                  <Badge variant={member.role === "Admin" ? "default" : "outline"} className="font-normal">
+                    {ROLE_LABEL[member.role]}
                   </Badge>
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">
                     {member.orderCount} order{member.orderCount === 1 ? "" : "s"}

@@ -1,0 +1,37 @@
+import { can, type StaffRole } from "@/lib/auth/roles"
+import type { DashboardState } from "@/lib/server/serialize"
+
+/**
+ * Serves each role only the data it is allowed to see.
+ *
+ * The dashboard reads one endpoint for everything, so without this the Kitchen
+ * screen would be *sent* every customer's name, email and phone number and the
+ * full payment ledger, and then asked politely not to render them. A screen that
+ * never receives a phone number cannot leak one — through a React devtools
+ * panel, a stray console.log, or the next component someone writes.
+ *
+ * Deliberately removes rather than blanks. A key that is absent is obviously
+ * absent; a key holding "" looks like a customer with no name.
+ */
+export function redactStateFor(role: StaffRole, state: DashboardState): DashboardState {
+  const seesCustomers = can(role, "customers:view")
+  const seesMoney = can(role, "payments:record") || can(role, "reports:view")
+
+  if (seesCustomers && seesMoney) return state
+
+  return {
+    ...state,
+    orders: state.orders.map((order) => ({
+      ...order,
+      customer: seesCustomers ? order.customer : null,
+      // The messages are addressed to a customer and quote the order total, so
+      // they belong to both permissions at once.
+      emails: seesCustomers && seesMoney ? order.emails : [],
+      payment: seesMoney
+        ? order.payment
+        : // Zeroed and emptied rather than dropped: the shape stays valid for
+          // the UI, and there is no figure in it to read.
+          { total: 0, paid: 0, refunded: 0, state: "Unpaid" as const, events: [] },
+    })),
+  }
+}

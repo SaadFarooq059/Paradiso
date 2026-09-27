@@ -23,6 +23,7 @@ import { ThemeToggle } from "@/components/dashboard/theme-toggle"
 import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar"
 import { getStaffColor } from "@/lib/mock-data"
 import type { StaffMember } from "@/lib/types"
+import { can, ROLE_LABEL, type Capability } from "@/lib/auth/roles"
 import { cn } from "@/lib/utils"
 
 export type DashboardView =
@@ -51,19 +52,24 @@ interface NavItem {
   id: DashboardView
   label: string
   icon: typeof PlusCircle
-  adminOnly?: boolean
+  /**
+   * What a role must hold to see this screen. Read from the same matrix the API
+   * routes enforce, so the two cannot drift: hiding is a courtesy, the route
+   * behind it is the control.
+   */
+  needs?: Capability
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "new-order", label: "New Order", icon: PlusCircle },
+  { id: "new-order", label: "New Order", icon: PlusCircle, needs: "orders:create" },
   { id: "orders", label: "Orders", icon: ClipboardList },
-  { id: "calendar", label: "Calendar", icon: CalendarRange },
-  { id: "recipes", label: "Recipes", icon: NotebookPen, adminOnly: true },
-  { id: "restock", label: "Restock", icon: PackagePlus, adminOnly: true },
-  { id: "stock", label: "Stock Levels", icon: PackageSearch },
-  { id: "reports", label: "Reports & Analytics", icon: BarChart3 },
-  { id: "staff", label: "Staff Management", icon: UserCog, adminOnly: true },
-  { id: "calendar-rules", label: "Calendar Rules", icon: CalendarCog, adminOnly: true },
+  { id: "calendar", label: "Calendar", icon: CalendarRange, needs: "production:view" },
+  { id: "recipes", label: "Recipes", icon: NotebookPen, needs: "recipes:manage" },
+  { id: "restock", label: "Restock", icon: PackagePlus, needs: "stock:restock" },
+  { id: "stock", label: "Stock Levels", icon: PackageSearch, needs: "stock:view" },
+  { id: "reports", label: "Reports & Analytics", icon: BarChart3, needs: "reports:view" },
+  { id: "staff", label: "Staff Management", icon: UserCog, needs: "staff:manage" },
+  { id: "calendar-rules", label: "Calendar Rules", icon: CalendarCog, needs: "settings:manage" },
 ]
 
 const PREVIEW_NAV_ITEMS: NavItem[] = [
@@ -99,8 +105,10 @@ export function SidebarNav({
   onSignOut,
 }: SidebarNavProps) {
   const [open, setOpen] = useState(false)
-  const isAdmin = currentUser.role === "admin"
-  const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
+  const visibleItems = NAV_ITEMS.filter((item) => !item.needs || can(currentUser.role, item.needs))
+  // Resetting the demo rewrites everyone's data, so it sits behind the same
+  // capability as the rest of the shop's configuration.
+  const canReset = can(currentUser.role, "settings:manage")
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
@@ -123,7 +131,7 @@ export function SidebarNav({
         </div>
         <div className="flex flex-col gap-3">
           <ThemeToggle />
-          <ResetDemoDataButton onReset={onResetDemoData} />
+          {canReset && <ResetDemoDataButton onReset={onResetDemoData} />}
           <SidebarFooter staff={staff} />
         </div>
       </SidebarBody>
@@ -168,7 +176,7 @@ function SidebarUserBlock({ currentUser, onSignOut }: { currentUser: StaffMember
         <div className="flex flex-col leading-tight">
           <span className="text-xs font-medium text-sidebar-foreground">{currentUser.name}</span>
           <span className="text-[0.65rem] text-muted-foreground">
-            {currentUser.role === "admin" ? "Admin" : "Staff"}
+            {ROLE_LABEL[currentUser.role]}
           </span>
         </div>
         <button

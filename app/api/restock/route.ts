@@ -1,12 +1,12 @@
 import { restockIngredient } from "@/lib/server/order-service"
 import { badRequest, mutationResponse } from "@/lib/server/respond"
 
-import { withAdmin } from "@/lib/server/guard"
+import { withCapability } from "@/lib/server/guard"
 
 export const dynamic = "force-dynamic"
 
 export async function POST(request: Request) {
-  return withAdmin(async () => {
+  return withCapability("stock:restock")(async () => {
   const body = await request.json().catch(() => null)
   const ingredient = typeof body?.ingredient === "string" ? body.ingredient : null
   const amount = Number.parseFloat(String(body?.amount))

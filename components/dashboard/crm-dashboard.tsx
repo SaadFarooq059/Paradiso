@@ -100,7 +100,7 @@ export function CrmDashboard() {
     data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
-  const isAdmin = currentUser?.role === "admin"
+  const isAdmin = currentUser?.role === "Admin"
 
   useEffect(() => {
     if (!isAuthLoading && !currentUser) {
@@ -203,8 +203,10 @@ export function CrmDashboard() {
     void mutate("/api/settings", { body: JSON.stringify(settings) })
   }
 
-  function handleSaveStaffMember(member: StaffMember) {
-    void mutate("/api/staff", { body: JSON.stringify(member) })
+  function handleSaveStaffMember(member: StaffMember, password: string) {
+    // The password goes straight to the server and is hashed there. It is never
+    // put in app state, so a re-render cannot leave it lying around.
+    void mutate("/api/staff", { body: JSON.stringify({ ...member, password }) })
   }
 
   function handleDeleteStaffMember(id: string) {

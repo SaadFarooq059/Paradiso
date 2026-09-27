@@ -1,19 +1,18 @@
 import { test, expect, type Page } from "@playwright/test"
 
+import { DEMO_ACCOUNTS } from "@/lib/auth/demo-accounts"
 import { collectionDate, dayAttribute, resetDemoData } from "./support"
 
 function eggsCard(page: Page) {
   return page.locator("div", { hasText: "Eggs" }).filter({ has: page.getByText("available") }).last()
 }
 
+/** Signs in through the form itself, as an Admin, who can do every step below. */
 async function signIn(page: Page) {
+  const account = DEMO_ACCOUNTS.find((a) => a.role === "Admin")!
   await page.goto("/sign-in")
-  // The staff picker defaults to the first roster entry (Aisha) — round-robin
-  // assignment doesn't depend on who's signed in, so the default is fine here.
-  // The password is now checked server-side against DEMO_PASSWORD.
-  const password = process.env.DEMO_PASSWORD
-  expect(password, "DEMO_PASSWORD must be set for the suite to sign in").toBeTruthy()
-  await page.locator("#password").fill(password!)
+  await page.locator("#email").fill(account.email)
+  await page.locator("#password").fill(account.password)
   await page.getByRole("button", { name: "Sign in" }).click()
   await page.waitForURL("/")
 }

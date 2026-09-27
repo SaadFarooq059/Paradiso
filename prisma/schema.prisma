@@ -19,6 +19,18 @@ datasource db {
   provider = "postgresql"
 }
 
+/// What a staff member is allowed to do.
+///
+/// Enforced on the API routes by the capability matrix in lib/auth/roles.ts.
+/// Hiding a nav item is not protection: the route behind it is still reachable
+/// by anyone who knows the path.
+enum StaffRole {
+  Admin
+  Manager
+  Kitchen
+  ShopFloor @map("Shop-floor")
+}
+
 /// The order's position in the fulfilment lifecycle — exactly one at a time.
 ///
 /// Deliberately does NOT carry payment. "Payment received" and "Refunded" are a
@@ -198,19 +210,31 @@ model StockLevel {
 
 /// A staff member. Doubles as the login identity (dummy auth picks one of these).
 model Staff {
-  id         String @id
-  name       String
-  /// "admin" | "staff" — gates the admin-only screens.
-  role       String
+  id           String    @id
+  name         String
+  /// Which capabilities this person has. A real column with a real enum, so the
+  /// database refuses a role the application does not know about.
+  role         StaffRole
+  /// Sign-in identity. Unique because it is what someone types to log in, and
+  /// two people sharing one would make "who did this" unanswerable.
+  email        String    @unique
+  /// bcrypt, cost 12. Never plaintext and never reversible — the only operations
+  /// are "hash this" and "does this match".
+  passwordHash String
+  /// A suspended account keeps its history but cannot sign in. Deleting the row
+  /// would orphan every status change and payment it is the actor for.
+  active       Boolean   @default(true)
+  /// Last successful sign-in, so the demo can show the accounts are real.
+  lastSignInAt DateTime?
   /// Round-robin counter: orders CURRENTLY on this person's plate. Incremented on
   /// assignment, decremented when an order is cancelled, so it tracks live
   /// workload rather than lifetime assignments.
-  orderCount Int    @default(0)
+  orderCount   Int       @default(0)
   /// Tie-break position for round-robin. In-memory this was free — the roster was
   /// a JS array and a stable sort on orderCount preserved its order. A database
   /// returns no guaranteed row order, so without an explicit column two staff on
   /// an equal count could be picked in either order between runs.
-  sortOrder  Int    @default(0)
+  sortOrder    Int       @default(0)
 
   assignments   ProductionAssignment[]
   statusChanges OrderStatusEvent[]

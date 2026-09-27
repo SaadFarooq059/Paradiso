@@ -11,7 +11,8 @@ import {
 } from "@/lib/server/order-service"
 import { badRequest, mutationResponse } from "@/lib/server/respond"
 
-import { withSession } from "@/lib/server/guard"
+import { FORBIDDEN, withSession } from "@/lib/server/guard"
+import { can, ORDER_ACTION_CAPABILITY } from "@/lib/auth/roles"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +29,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await request.json().catch(() => null)
     const action = typeof body?.action === "string" ? body.action : null
     const note = typeof body?.note === "string" ? body.note : null
+
+    // Every action names the capability it needs, and an action that names none
+    // is refused. Failing closed matters more here than anywhere else in the
+    // app: a new action added without a matching entry would otherwise be
+    // available to every role the moment it shipped.
+    const required = action ? ORDER_ACTION_CAPABILITY[action] : undefined
+    if (!action || !required) return badRequest("Unknown order action.")
+    if (!can(member.role, required)) return FORBIDDEN(required)
 
     switch (action) {
       // --- lifecycle ---------------------------------------------------------
