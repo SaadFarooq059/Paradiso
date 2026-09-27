@@ -203,7 +203,10 @@ const UNAVAILABLE_NOTE: Record<UnavailableReason, string> = {
  * set, so when nobody is working that day this picks exactly who it used to.
  */
 async function pickStaff(tx: Tx, productionDate: Date) {
+  // Active only. A suspended account keeps its history but must not be handed
+  // new work — it cannot sign in to do it, and the order would look staffed.
   const staff = await tx.staff.findMany({
+    where: { active: true },
     orderBy: [{ orderCount: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
   })
   if (staff.length === 0) return null

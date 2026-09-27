@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
 
-import { DEMO_ACCOUNTS } from "@/lib/auth/demo-accounts"
+import { DEV_ACCOUNTS } from "@/lib/auth/dev-accounts"
 import { collectionDate, dayAttribute, priceVariant, resetDemoData } from "./support"
 
 function eggsCard(page: Page) {
@@ -9,7 +9,7 @@ function eggsCard(page: Page) {
 
 /** Signs in through the form itself, as an Admin, who can do every step below. */
 async function signIn(page: Page) {
-  const account = DEMO_ACCOUNTS.find((a) => a.role === "Admin")!
+  const account = DEV_ACCOUNTS.find((a) => a.role === "Admin")!
   await page.goto("/sign-in")
   await page.locator("#email").fill(account.email)
   await page.locator("#password").fill(account.password)
@@ -87,7 +87,7 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
   await page.getByRole("button", { name: "Orders" }).click()
   let firstRow = page.locator("table tbody tr").first()
   await expect(firstRow).toContainText("Scheduled")
-  await expect(firstRow).toContainText("Aisha")
+  await expect(firstRow).toContainText("Mattia")
 
   await page.getByRole("button", { name: "Stock Levels" }).click()
   await expect(eggsCard(page)).toContainText(/10\s*available/)
@@ -101,7 +101,7 @@ test("order sequence: stock deduction, round-robin staff, and on-hold shortage",
   await page.getByRole("button", { name: "Orders" }).click()
   firstRow = page.locator("table tbody tr").first()
   await expect(firstRow).toContainText("Scheduled")
-  await expect(firstRow).toContainText("Tom")
+  await expect(firstRow).toContainText("Marco")
 
   await page.getByRole("button", { name: "Stock Levels" }).click()
   await expect(eggsCard(page)).toContainText(/^Eggs/)

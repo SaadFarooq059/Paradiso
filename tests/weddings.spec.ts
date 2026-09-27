@@ -295,7 +295,7 @@ test.describe("money reuses the order ledger", () => {
     const paid = await findWedding(page, id)
     expect(paid.payment.paid).toBe(7750)
     expect(paid.outstanding).toBe(15500 - 7750)
-    expect(paid.payment.events[0].actorName).toBe("Aisha Bello")
+    expect(paid.payment.events[0].actorName).toBe("Mattia Paradiso")
     // Paying the deposit is a pipeline event, and books capacity under the
     // seeded setting.
     expect(paid.stage).toBe("DepositPaid")

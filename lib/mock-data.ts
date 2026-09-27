@@ -368,10 +368,10 @@ export const WEDDING_EXTRAS: {
 ]
 
 export const INITIAL_STAFF: StaffMember[] = [
-  { id: "aisha", name: "Aisha Bello", role: "Admin", orderCount: 0 },
-  { id: "tom", name: "Tom Whitfield", role: "Manager", orderCount: 0 },
-  { id: "marco", name: "Marco Ferrari", role: "Kitchen", orderCount: 0 },
-  { id: "nadia", name: "Nadia Haddad", role: "ShopFloor", orderCount: 0 },
+  { id: "mattia", name: "Mattia Paradiso", role: "Admin", orderCount: 0 },
+  { id: "marco-paradiso", name: "Marco Paradiso", role: "Manager", orderCount: 0 },
+  { id: "kitchen", name: "Kitchen", role: "Kitchen", orderCount: 0 },
+  { id: "shopfloor", name: "Shop floor", role: "ShopFloor", orderCount: 0 },
 ]
 
 /**

@@ -282,8 +282,8 @@ test.describe("who did what", () => {
     const state = await readState(page)
     const history = state.orders.find((o) => o.id === created.orderId)!.statusHistory
 
-    expect(history.find((e) => e.status === "Confirmed")?.actorName).toBe("Aisha Bello")
-    expect(history.find((e) => e.status === "In Production")?.actorName).toBe("Marco Ferrari")
+    expect(history.find((e) => e.status === "Confirmed")?.actorName).toBe("Mattia Paradiso")
+    expect(history.find((e) => e.status === "In Production")?.actorName).toBe("Kitchen")
   })
 
   test("a payment records who took it", async ({ page }) => {
@@ -299,7 +299,7 @@ test.describe("who did what", () => {
     const state = await readState(page)
     const payment = state.orders.find((o) => o.id === created.orderId)!.payment
     expect(payment.events).toHaveLength(1)
-    expect(payment.events[0].actorName).toBe("Nadia Haddad")
+    expect(payment.events[0].actorName).toBe("Shop floor")
   })
 })
 

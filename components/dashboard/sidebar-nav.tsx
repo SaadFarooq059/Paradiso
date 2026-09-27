@@ -7,6 +7,7 @@ import {
   CalendarRange,
   ClipboardList,
   HeartHandshake,
+  KeyRound,
   LogOut,
   NotebookPen,
   PackagePlus,
@@ -24,6 +25,11 @@ import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar"
 import { getStaffColor } from "@/lib/mock-data"
 import type { StaffMember } from "@/lib/types"
 import { can, ROLE_LABEL, type Capability } from "@/lib/auth/roles"
+import { toast } from "sonner"
+
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
 export type DashboardView =
@@ -179,16 +185,122 @@ function SidebarUserBlock({ currentUser, onSignOut }: { currentUser: StaffMember
             {ROLE_LABEL[currentUser.role]}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onSignOut}
-          aria-label="Sign out"
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          <LogOut className="size-3.5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ChangePassword />
+          <button
+            type="button"
+            onClick={onSignOut}
+            aria-label="Sign out"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <LogOut className="size-3.5" />
+          </button>
+        </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Lets whoever is signed in change their own password.
+ *
+ * Here rather than on the Staff screen because every role needs it and Kitchen
+ * cannot open that screen. The four live accounts were handed out with
+ * generated passwords; somebody who cannot change theirs keeps using the one
+ * that was sent to them.
+ */
+function ChangePassword() {
+  const [open, setOpen] = useState(false)
+  const [current, setCurrent] = useState("")
+  const [next, setNext] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  const mismatch = confirm.length > 0 && next !== confirm
+  const tooShort = next.length > 0 && next.length < 12
+  const canSubmit = current.length > 0 && next.length >= 12 && next === confirm && !busy
+
+  function reset() {
+    setCurrent("")
+    setNext("")
+    setConfirm("")
+  }
+
+  async function submit() {
+    setBusy(true)
+    try {
+      const response = await fetch("/api/account/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { message?: string }
+      if (response.ok) {
+        toast.success(payload.message ?? "Password changed.")
+        reset()
+        setOpen(false)
+      } else {
+        toast.error(payload.message ?? "Could not change the password.")
+      }
+    } catch {
+      toast.error("Couldn't reach the server.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value)
+        if (!value) reset()
+      }}
+    >
+      <PopoverTrigger
+        aria-label="Change password"
+        className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      >
+        <KeyRound className="size-3.5" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium text-foreground">Change your password</span>
+          <span className="text-xs text-muted-foreground">
+            At least 12 characters. Other devices are signed out.
+          </span>
+        </div>
+        <Input
+          type="password"
+          autoComplete="current-password"
+          placeholder="Current password"
+          aria-label="Current password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+        <Input
+          type="password"
+          autoComplete="new-password"
+          placeholder="New password"
+          aria-label="New password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+        />
+        <Input
+          type="password"
+          autoComplete="new-password"
+          placeholder="Repeat new password"
+          aria-label="Repeat new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+        {tooShort && <p className="text-xs text-destructive">At least 12 characters.</p>}
+        {mismatch && <p className="text-xs text-destructive">Those two do not match.</p>}
+        <Button size="sm" className="w-full" disabled={!canSubmit} onClick={submit}>
+          {busy ? "Saving…" : "Change password"}
+        </Button>
+      </PopoverContent>
+    </Popover>
   )
 }
 
