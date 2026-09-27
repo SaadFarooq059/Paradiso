@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { prisma } from "@/lib/prisma"
-import { DEMO_ACCOUNTS } from "@/lib/auth/demo-accounts"
+import { DEV_ACCOUNTS } from "@/lib/auth/dev-accounts"
 import { hashPassword } from "@/lib/server/session"
 import {
   INGREDIENT_INFO,
@@ -101,7 +101,7 @@ export async function seedDatabase() {
       // Credentials come from the published demo accounts, hashed here — the
       // seed never stores a plaintext password, even for a demo login whose
       // password is printed on the sign-in screen.
-      const account = DEMO_ACCOUNTS.find((a) => a.email.startsWith(`${member.id}@`))
+      const account = DEV_ACCOUNTS.find((a) => a.email.startsWith(`${member.id}@`))
       await tx.staff.create({
         data: {
           id: member.id,

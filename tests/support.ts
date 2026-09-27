@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-import { DEMO_ACCOUNTS } from "@/lib/auth/demo-accounts"
+import { DEV_ACCOUNTS } from "@/lib/auth/dev-accounts"
 import type { StaffRole } from "@/lib/auth/roles"
 import { shopDayOf } from "@/lib/shop-time"
 
@@ -52,7 +52,7 @@ export async function resetDemoData(page: Page) {
  * permissions it is acting with, and naming the role says that outright.
  */
 export async function signInAs(page: Page, role: StaffRole = "Admin") {
-  const account = DEMO_ACCOUNTS.find((a) => a.role === role)
+  const account = DEV_ACCOUNTS.find((a) => a.role === role)
   expect(account, `no demo account seeded for ${role}`).toBeTruthy()
   const response = await page.request.post("/api/auth", {
     data: { email: account!.email, password: account!.password },
