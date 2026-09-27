@@ -275,6 +275,17 @@ export async function createOrder(
     const variant = await readVariant(tx, productId)
     if (!variant) return { message: "Unknown product.", tone: "error" as const }
 
+    // Same rule as a missing wedding package: a product nobody has priced is
+    // refused rather than sold for nothing. Some of the range has no published
+    // price yet, and an order silently totalling £0.00 is the kind of plausible
+    // wrong number that reaches a customer before anyone notices.
+    if (variant.priceAmount <= 0) {
+      return {
+        message: `${variant.name} has no published price yet. Set one in Products & Recipes before taking an order.`,
+        tone: "error" as const,
+      }
+    }
+
     // The calendar rules are enforced here, not only in the picker. The picker
     // greys these days out, but it is a convenience — the server is what makes
     // the rule true, and an order arriving by any other route gets the same answer.

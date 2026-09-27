@@ -55,4 +55,10 @@ export const REFERENCE_TABLES: ReferenceTable[] = [
     consequence:
       "Every wedding quote silently loses its base price — this is exactly how a £860 quote came out at £80.",
   },
+  {
+    model: "weddingExtra",
+    table: "wedding_extras",
+    consequence:
+      "Pots, cannoli and delivery disappear from the quote builder, so those figures get typed in by hand instead of coming from the client's published prices.",
+  },
 ]

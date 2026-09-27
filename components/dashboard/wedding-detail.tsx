@@ -15,15 +15,24 @@ import {
   DEAD_STAGES,
   WEDDING_PROGRESSION,
   WEDDING_STAGE_LABEL,
+  deliveryAmount,
+  extraLineAmount,
   weddingPaymentLabel,
   type WeddingStage,
 } from "@/lib/weddings"
-import type { CalendarSettings, ProductVariant, Wedding, WeddingPackage } from "@/lib/types"
+import type {
+  CalendarSettings,
+  ProductVariant,
+  Wedding,
+  WeddingExtra,
+  WeddingPackage,
+} from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export function WeddingDetail({
   wedding,
   packages,
+  extras,
   variants,
   settings,
   canManage,
@@ -31,6 +40,7 @@ export function WeddingDetail({
 }: {
   wedding: Wedding
   packages: WeddingPackage[]
+  extras: WeddingExtra[]
   variants: ProductVariant[]
   settings: CalendarSettings
   canManage: boolean
@@ -115,14 +125,21 @@ export function WeddingDetail({
         <QuoteCard
           wedding={wedding}
           packages={packages}
+          extras={extras}
           variants={variants}
+          settings={settings}
           canManage={canManage && !isDead}
           onAction={onAction}
         />
 
         <MoneyCard wedding={wedding} settings={settings} canManage={canManage && !isDead} onAction={onAction} />
 
-        <LogisticsCard wedding={wedding} canManage={canManage && !isDead} onAction={onAction} />
+        <LogisticsCard
+          wedding={wedding}
+          settings={settings}
+          canManage={canManage && !isDead}
+          onAction={onAction}
+        />
       </div>
 
       <div className="flex flex-col gap-4">
@@ -223,13 +240,17 @@ function Note({ label, text, emphasis }: { label: string; text: string; emphasis
 function QuoteCard({
   wedding,
   packages,
+  extras,
   variants,
+  settings,
   canManage,
   onAction,
 }: {
   wedding: Wedding
   packages: WeddingPackage[]
+  extras: WeddingExtra[]
   variants: ProductVariant[]
+  settings: CalendarSettings
   canManage: boolean
   onAction: (action: string, payload?: Record<string, unknown>) => void
 }) {
@@ -245,8 +266,28 @@ function QuoteCard({
   const [adjustmentLabel, setAdjustmentLabel] = useState("")
   const [adjustmentAmount, setAdjustmentAmount] = useState("")
 
+  // The priced lines are read back out of the quote rather than kept in a second
+  // place, so amending starts from what was actually agreed.
+  const [extraQuantities, setExtraQuantities] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (quote?.adjustments ?? [])
+        .filter((a) => a.kind === "extra" && a.extraId)
+        .map((a) => [a.extraId as string, String(a.quantity ?? 0)])
+    )
+  )
+  const [deliveryMiles, setDeliveryMiles] = useState(() => {
+    const line = (quote?.adjustments ?? []).find((a) => a.kind === "delivery")
+    return line ? String(line.quantity ?? "") : ""
+  })
+  const [stencil, setStencil] = useState(() => {
+    const line = (quote?.adjustments ?? []).find((a) => a.kind === "stencil")
+    return line?.label.replace(/^Stencil: "(.*)"$/, "$1") ?? ""
+  })
+
   const pkg = packages.find((p) => p.id === packageId)
-  const adjustments = quote?.adjustments ?? []
+  // Only the hand-typed ones carry forward as-is; the rest are re-priced below
+  // from the current price list.
+  const adjustments = (quote?.adjustments ?? []).filter((a) => !a.kind)
   const pendingAdjustment =
     adjustmentLabel.trim() && parseMoney(adjustmentAmount.replace(/^-/, "")) !== null
       ? {
@@ -258,15 +299,50 @@ function QuoteCard({
       : null
 
   const nextAdjustments = pendingAdjustment ? [...adjustments, pendingAdjustment] : adjustments
+
+  // Chosen extras, as ids and counts. What they cost is the server's decision;
+  // this only mirrors the arithmetic so the total on screen is not a surprise.
+  const chosenExtras = extras
+    .map((extra) => ({ extra, quantity: Number.parseInt(extraQuantities[extra.id] ?? "", 10) }))
+    .filter(({ quantity }) => Number.isFinite(quantity) && quantity > 0)
+
+  const milesValue = Number.parseFloat(deliveryMiles)
+  const hasDelivery = Number.isFinite(milesValue) && milesValue > 0
+
+  const previewLines = [
+    ...chosenExtras.map(({ extra, quantity }) => ({
+      label: `${extra.name} × ${quantity}`,
+      amount: extraLineAmount(extra, quantity),
+      discounted: extra.bulkFrom !== null && quantity >= extra.bulkFrom,
+    })),
+    ...(hasDelivery
+      ? [
+          {
+            label: `Delivery, ${milesValue} miles`,
+            amount: deliveryAmount(milesValue, settings.deliveryPerMile),
+            discounted: false,
+          },
+        ]
+      : []),
+  ]
+
   const projectedTotal =
-    (pkg?.basePrice ?? 0) + nextAdjustments.reduce((sum, a) => sum + a.amount, 0)
+    (pkg?.basePrice ?? 0) +
+    nextAdjustments.reduce((sum, a) => sum + a.amount, 0) +
+    previewLines.reduce((sum, line) => sum + line.amount, 0)
   const delta = quote ? projectedTotal - quote.total : 0
+
+  const overMaxMiles = hasDelivery && milesValue > settings.deliveryMaxMiles
+  const underMinimum = hasDelivery && projectedTotal < settings.deliveryMinimumOrder
 
   function submit() {
     onAction("quote", {
       packageId: packageId || null,
       guestCount: Number.parseInt(guestCount, 10),
       adjustments: nextAdjustments,
+      extras: chosenExtras.map(({ extra, quantity }) => ({ extraId: extra.id, quantity })),
+      deliveryMiles: hasDelivery ? milesValue : null,
+      stencil: pkg?.stencilOptions.length ? stencil || null : null,
       tiers: tiers
         .filter((t) => t.variantId && Number.parseInt(t.quantity, 10) > 0)
         .map((t) => ({
@@ -289,9 +365,8 @@ function QuoteCard({
               Quote {quote ? `v${quote.version}` : ""}
             </CardTitle>
             <CardDescription>
-              Built from a package plus adjustments.{" "}
-              <strong className="font-medium text-foreground">Placeholder prices</strong> — the
-              client hasn&apos;t sent theirs.
+              Built from a package, extras and adjustments, at the shop&apos;s published
+              prices.
             </CardDescription>
           </div>
           {canManage && (
@@ -333,7 +408,8 @@ function QuoteCard({
 
         {!quote && !editing && (
           <p className="text-muted-foreground">
-            No quote yet. Building one moves this enquiry to Quoted.
+            No quote yet. Building one moves this enquiry to Quoted — the shop quotes
+            within {settings.weddingQuoteTurnaround}.
           </p>
         )}
 
@@ -436,6 +512,97 @@ function QuoteCard({
               </Button>
             </div>
 
+            {pkg && pkg.stencilOptions.length > 0 && (
+              <Field>
+                <FieldLabel htmlFor="q-stencil">Stencilled message</FieldLabel>
+                <Select value={stencil} onValueChange={(v) => setStencil(v as string)}>
+                  <SelectTrigger id="q-stencil" className="w-full">
+                    <SelectValue>{(v: string | null) => v || "Choose a message"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pkg.stencilOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>Included in the package price.</FieldDescription>
+              </Field>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-foreground">Extras</span>
+              {extras.map((extra) => {
+                const quantity = Number.parseInt(extraQuantities[extra.id] ?? "", 10)
+                const qualifies =
+                  extra.bulkFrom !== null && Number.isFinite(quantity) && quantity >= extra.bulkFrom
+                if (extra.unit === "per mile") return null
+                return (
+                  <div
+                    key={extra.id}
+                    className="grid items-center gap-2 @sm:grid-cols-[minmax(0,1fr)_5rem_6rem]"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-sm text-foreground">{extra.name}</span>{" "}
+                      <span className="text-xs text-muted-foreground">
+                        {formatMoney(extra.unitPrice)} {extra.unit}
+                        {extra.bulkFrom !== null &&
+                          ` · ${extra.bulkDiscountPercent}% off from ${extra.bulkFrom}`}
+                      </span>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      aria-label={`${extra.name} quantity`}
+                      value={extraQuantities[extra.id] ?? ""}
+                      onChange={(e) =>
+                        setExtraQuantities((prev) => ({ ...prev, [extra.id]: e.target.value }))
+                      }
+                    />
+                    <span
+                      className={cn(
+                        "text-right font-mono text-sm tabular-nums",
+                        qualifies ? "text-success" : "text-muted-foreground"
+                      )}
+                    >
+                      {Number.isFinite(quantity) && quantity > 0
+                        ? formatMoney(extraLineAmount(extra, quantity))
+                        : "—"}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <Field>
+              <FieldLabel htmlFor="q-miles">Delivery distance</FieldLabel>
+              <Input
+                id="q-miles"
+                type="number"
+                min={0}
+                step="0.1"
+                placeholder="Leave empty for collection"
+                value={deliveryMiles}
+                onChange={(e) => setDeliveryMiles(e.target.value)}
+              />
+              <FieldDescription>
+                {formatMoney(settings.deliveryPerMile)} per mile, up to {settings.deliveryMaxMiles}{" "}
+                miles, minimum order {formatMoney(settings.deliveryMinimumOrder)}. Collection is free.
+              </FieldDescription>
+              {overMaxMiles && (
+                <FieldDescription className="text-destructive">
+                  That is beyond the {settings.deliveryMaxMiles}-mile limit.
+                </FieldDescription>
+              )}
+              {underMinimum && !overMaxMiles && (
+                <FieldDescription className="text-destructive">
+                  This quote is under the {formatMoney(settings.deliveryMinimumOrder)} delivery
+                  minimum, so it is collection only.
+                </FieldDescription>
+              )}
+            </Field>
+
             <div className="grid gap-2 @sm:grid-cols-[minmax(0,2fr)_8rem]">
               <Input
                 placeholder="Adjustment, e.g. Extra tier"
@@ -467,7 +634,7 @@ function QuoteCard({
               </span>
             </div>
 
-            <Button onClick={submit} className="w-fit">
+            <Button onClick={submit} className="w-fit" disabled={overMaxMiles || underMinimum}>
               Save quote {quote ? `v${quote.version + 1}` : ""}
             </Button>
           </div>
@@ -525,8 +692,31 @@ function MoneyCard({
             sub={depositMet ? "met" : "outstanding"}
           />
           <Detail label="Paid" value={formatMoney(wedding.payment.paid)} />
-          <Detail label="Balance due" value={formatMoney(wedding.outstanding)} />
+          <Detail
+            label="Balance due"
+            value={formatMoney(wedding.outstanding)}
+            // The client's terms are a date, not a vague "before the day", so
+            // say which date and whether it has passed.
+            sub={
+              wedding.balanceDueDate
+                ? `by ${formatDateLong(new Date(wedding.balanceDueDate))}`
+                : undefined
+            }
+          />
         </dl>
+
+        {wedding.outstanding > 0 && wedding.balanceDueDate && (
+          <p
+            className={cn(
+              "text-xs",
+              wedding.balanceDueDate < Date.now() ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {wedding.balanceDueDate < Date.now()
+              ? `The balance was due on ${formatDateLong(new Date(wedding.balanceDueDate))}.`
+              : `The balance is due ${settings.weddingBalanceDueDaysBefore} days before the event, on ${formatDateLong(new Date(wedding.balanceDueDate))}.`}
+          </p>
+        )}
 
         {canManage && (
           <div className="flex flex-wrap items-end gap-2">
@@ -589,10 +779,12 @@ function MoneyCard({
 
 function LogisticsCard({
   wedding,
+  settings,
   canManage,
   onAction,
 }: {
   wedding: Wedding
+  settings: CalendarSettings
   canManage: boolean
   onAction: (action: string, payload?: Record<string, unknown>) => void
 }) {
@@ -600,6 +792,7 @@ function LogisticsCard({
   const [drivers, setDrivers] = useState(String(wedding.driversRequired))
   const [item, setItem] = useState("")
   const [quantity, setQuantity] = useState("1")
+  const [deposit, setDeposit] = useState("")
 
   return (
     <Card>
@@ -648,18 +841,42 @@ function LogisticsCard({
         </div>
 
         <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <span className="text-sm font-medium text-foreground">Trays and stands on loan</span>
+          <div>
+            <span className="text-sm font-medium text-foreground">Trays and stands on loan</span>
+            <p className="text-xs text-muted-foreground">
+              Deposits come back when the item does, within {settings.loanReturnDays} days.
+            </p>
+          </div>
           {wedding.loans.length === 0 ? (
             <p className="text-muted-foreground">Nothing out on loan.</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
               {wedding.loans.map((loan) => (
                 <li key={loan.id} className="flex items-center justify-between gap-3">
-                  <span className={cn(loan.returned && "text-muted-foreground line-through")}>
-                    {loan.quantity} × {loan.item}
+                  <span className={cn("min-w-0", loan.returned && "text-muted-foreground")}>
+                    <span className={cn(loan.returned && "line-through")}>
+                      {loan.quantity} × {loan.item}
+                    </span>
+                    {loan.depositAmount > 0 && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {formatMoney(loan.depositAmount)} deposit
+                        {loan.returned &&
+                          (loan.depositRefundedAt
+                            ? ` · refunded ${formatDateLong(new Date(loan.depositRefundedAt))}`
+                            : " · kept, returned late")}
+                      </span>
+                    )}
                   </span>
                   {loan.returned ? (
-                    <Badge variant="outline" className="font-normal text-muted-foreground">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "font-normal",
+                        loan.depositAmount > 0 && !loan.depositRefundedAt
+                          ? "border-destructive/30 text-destructive"
+                          : "text-muted-foreground"
+                      )}
+                    >
                       Returned
                     </Badge>
                   ) : canManage ? (
@@ -682,16 +899,28 @@ function LogisticsCard({
           )}
 
           {canManage && (
-            <div className="grid gap-2 @sm:grid-cols-[minmax(0,2fr)_5rem_auto]">
+            <div className="grid gap-2 @sm:grid-cols-[minmax(0,2fr)_5rem_6rem_auto]">
               <Input placeholder="Cake stand, 14-inch" value={item} onChange={(e) => setItem(e.target.value)} />
               <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              <Input
+                placeholder="Deposit"
+                inputMode="decimal"
+                aria-label="Deposit held"
+                value={deposit}
+                onChange={(e) => setDeposit(e.target.value)}
+              />
               <Button
                 variant="outline"
                 disabled={!item.trim()}
                 onClick={() => {
-                  onAction("loan-out", { item, quantity: Number.parseInt(quantity, 10) })
+                  onAction("loan-out", {
+                    item,
+                    quantity: Number.parseInt(quantity, 10),
+                    depositAmount: parseMoney(deposit) ?? 0,
+                  })
                   setItem("")
                   setQuantity("1")
+                  setDeposit("")
                 }}
               >
                 <Plus data-icon="inline-start" />

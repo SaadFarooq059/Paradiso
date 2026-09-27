@@ -102,6 +102,8 @@ export async function renderEmailsForStatus(
     shopName: settings.shopName,
     shopAddress: settings.shopAddress,
     shopPhone: settings.shopPhone,
+    shopEmail: settings.shopEmail,
+    shopOpeningHours: settings.shopOpeningHours,
   })
 
   // An order with no customer has nowhere to send to. Recorded as suppressed

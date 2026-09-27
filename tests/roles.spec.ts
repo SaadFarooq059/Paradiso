@@ -270,7 +270,8 @@ test.describe("who did what", () => {
   test("the actor on a status change is the signed-in user, not a default", async ({ page }) => {
     await resetDemoData(page)
     await signInAs(page, "Admin")
-    const created = await confirmOrder(page, "suprema-classico", 1, collectionDate())
+    // A priced product: this test is about who is recorded, not about pricing.
+    const created = await confirmOrder(page, "mini-classico", 1, collectionDate())
     await orderAction(page, created.orderId!, "schedule")
 
     // A different real person moves it on.

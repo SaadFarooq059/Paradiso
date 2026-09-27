@@ -17,6 +17,7 @@ import type {
   RestockEntry,
   StaffMember,
   Wedding,
+  WeddingExtra,
   WeddingPackage,
 } from "@/lib/types"
 
@@ -34,6 +35,7 @@ export interface DashboardData {
   productionDemand: ProductionDayDemand[]
   weddings: Wedding[]
   weddingPackages: WeddingPackage[]
+  weddingExtras: WeddingExtra[]
 }
 
 /** A production day's demand, with the date revived from the wire. */
@@ -54,6 +56,7 @@ const EMPTY: DashboardData = {
   productionDemand: [],
   weddings: [],
   weddingPackages: [],
+  weddingExtras: [],
 }
 
 function reviveOrder(order: SerializedOrder): Order {

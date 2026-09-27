@@ -100,7 +100,8 @@ export function CrmDashboard() {
 
   const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand,
     weddings,
-    weddingPackages } =
+    weddingPackages,
+    weddingExtras } =
     data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
@@ -284,6 +285,7 @@ export function CrmDashboard() {
                 <WeddingsPanel
                   weddings={weddings}
                   packages={weddingPackages}
+                  extras={weddingExtras}
                   variants={variants}
                   settings={calendarSettings}
                   canManage={can(currentUser.role, "weddings:manage")}

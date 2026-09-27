@@ -91,6 +91,16 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
       shopPhone: shopPhone.trim(),
       weddingCapacityStage: capacityStage,
       weddingDepositPercent: parsedDeposit,
+      // Carried through unchanged: these are the client's terms, edited on the
+      // shop's own screens rather than buried in the calendar rules form.
+      shopEmail: settings.shopEmail,
+      shopOpeningHours: settings.shopOpeningHours,
+      weddingBalanceDueDaysBefore: settings.weddingBalanceDueDaysBefore,
+      weddingQuoteTurnaround: settings.weddingQuoteTurnaround,
+      deliveryPerMile: settings.deliveryPerMile,
+      deliveryMaxMiles: settings.deliveryMaxMiles,
+      deliveryMinimumOrder: settings.deliveryMinimumOrder,
+      loanReturnDays: settings.loanReturnDays,
     })
   }
 

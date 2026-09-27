@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test"
 import {
   confirmOrder,
   orderAction,
+  priceVariant,
   readState,
   resetDemoData,
   signInViaApi,
@@ -36,6 +37,11 @@ function chosenDay(): string {
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInViaApi(page)
+  // Suprema and Grande have no published price, and an unpriced product cannot
+  // be ordered. These specs are about the kitchen, not the till, so they set a
+  // working price first.
+  await priceVariant(page, "suprema-classico", 4500)
+  await priceVariant(page, "grande-classico", 2800)
 })
 
 test.describe("the shop's calendar does not depend on anyone's clock", () => {
@@ -86,8 +92,11 @@ test.describe("the shop's calendar does not depend on anyone's clock", () => {
       timeZone: "Europe/London",
     }).format(new Date(Date.UTC(year, month - 1, dayOfMonth, 12)))
     expect(confirmation.body).toContain(readable)
-    // And the shop's opening time on the shop's clock, not the server's.
-    expect(confirmation.body).toContain("from 10:30")
+    // And the shop's opening time on the shop's clock, not the server's. Read
+    // from the settings rather than hard-coded, because it is the client's
+    // trading hours and they are allowed to change them.
+    const { calendarSettings } = await readState(page)
+    expect(confirmation.body).toContain(`from ${calendarSettings.earliestCollectionTime}`)
   })
 
   test("a date the picker offers is a date the server accepts", async ({ page }) => {

@@ -32,36 +32,204 @@ export const INGREDIENT_ORDER: IngredientKey[] = [
  * not a figure from the client — exactly like the batch yields. The Recipes
  * screen labels them as placeholder so nobody quotes them to a customer.
  */
+/**
+ * The client's real range: three sizes across six flavours.
+ *
+ * Prices are the published Mini-misu ones. Grande and Suprema are NOT published,
+ * so they carry PLACEHOLDER_PRICE and the Recipes screen says so — they must not
+ * be quoted to anyone. Vegan and GF are £30 flat, which reads as the same price
+ * whatever the size.
+ *
+ * Coffee appears in Classico and nothing else, which is the shop's own rule.
+ * Vegan and GF Classico are Classico, so they keep it.
+ *
+ * Still placeholder, and labelled as such in the UI: unitsPerBatch (the client
+ * has not told us what a batch yields) and Suprema's four-day lead time — the
+ * site says two days for everything, so which products genuinely need four is
+ * an open question.
+ */
+export const PLACEHOLDER_PRICE = 0
+
 export const PRODUCT_VARIANTS: ProductVariant[] = [
   {
     id: "mini-classico",
-    name: "Mini Classico",
-    description: "A single elegant portion, dusted with cocoa.",
-    servings: "Serves 1",
+    name: "Mini-misu Classico",
+    description: "6″. Coffee-soaked savoiardi, mascarpone cream, dusted with cocoa.",
+    servings: "Serves ~4",
     requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
     leadTimeDays: 2,
     unitsPerBatch: 8,
-    priceAmount: 650,
+    priceAmount: 1500,
+  },
+  {
+    id: "mini-biscoff",
+    name: "Mini-misu Biscoff",
+    description: "6″. Biscoff biscuit and caramelised spread, no coffee.",
+    servings: "Serves ~4",
+    requires: { eggs: 2, mascarpone: 150, savoiardi: 100 },
+    leadTimeDays: 2,
+    unitsPerBatch: 8,
+    priceAmount: 1800,
+  },
+  {
+    id: "mini-pistacchio-nutella",
+    name: "Mini-misu Pistacchio & Nutella",
+    description: "6″. Pistachio cream layered with Nutella, no coffee.",
+    servings: "Serves ~4",
+    requires: { eggs: 2, mascarpone: 150, savoiardi: 100 },
+    leadTimeDays: 2,
+    unitsPerBatch: 8,
+    priceAmount: 1800,
+  },
+  {
+    id: "mini-oreo-white-chocolate",
+    name: "Mini-misu Oreo & White Chocolate",
+    description: "6″. Crushed Oreo and white chocolate, no coffee.",
+    servings: "Serves ~4",
+    requires: { eggs: 2, mascarpone: 150, savoiardi: 100 },
+    leadTimeDays: 2,
+    unitsPerBatch: 8,
+    priceAmount: 1800,
+  },
+  {
+    id: "mini-vegan-classico",
+    name: "Mini-misu Vegan Classico",
+    description: "6″. The Classico, made without dairy or egg.",
+    servings: "Serves ~4",
+    requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
+    leadTimeDays: 2,
+    unitsPerBatch: 8,
+    priceAmount: 3000,
+  },
+  {
+    id: "mini-gf-classico",
+    name: "Mini-misu GF Classico",
+    description: "6″. The Classico, made with gluten-free savoiardi.",
+    servings: "Serves ~4",
+    requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
+    leadTimeDays: 2,
+    unitsPerBatch: 8,
+    priceAmount: 3000,
   },
   {
     id: "grande-classico",
-    name: "Grande Classico",
-    description: "Layered for sharing — our most popular size.",
-    servings: "Serves 4–6",
+    name: "Grande-misu Classico",
+    description: "8″. Coffee-soaked savoiardi, mascarpone cream, dusted with cocoa.",
+    servings: "Serves ~9",
     requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
     leadTimeDays: 2,
     unitsPerBatch: 4,
-    priceAmount: 2800,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "grande-biscoff",
+    name: "Grande-misu Biscoff",
+    description: "8″. Biscoff biscuit and caramelised spread, no coffee.",
+    servings: "Serves ~9",
+    requires: { eggs: 4, mascarpone: 300, savoiardi: 200 },
+    leadTimeDays: 2,
+    unitsPerBatch: 4,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "grande-pistacchio-nutella",
+    name: "Grande-misu Pistacchio & Nutella",
+    description: "8″. Pistachio cream layered with Nutella, no coffee.",
+    servings: "Serves ~9",
+    requires: { eggs: 4, mascarpone: 300, savoiardi: 200 },
+    leadTimeDays: 2,
+    unitsPerBatch: 4,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "grande-oreo-white-chocolate",
+    name: "Grande-misu Oreo & White Chocolate",
+    description: "8″. Crushed Oreo and white chocolate, no coffee.",
+    servings: "Serves ~9",
+    requires: { eggs: 4, mascarpone: 300, savoiardi: 200 },
+    leadTimeDays: 2,
+    unitsPerBatch: 4,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "grande-vegan-classico",
+    name: "Grande-misu Vegan Classico",
+    description: "8″. The Classico, made without dairy or egg.",
+    servings: "Serves ~9",
+    requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
+    leadTimeDays: 2,
+    unitsPerBatch: 4,
+    priceAmount: 3000,
+  },
+  {
+    id: "grande-gf-classico",
+    name: "Grande-misu GF Classico",
+    description: "8″. The Classico, made with gluten-free savoiardi.",
+    servings: "Serves ~9",
+    requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
+    leadTimeDays: 2,
+    unitsPerBatch: 4,
+    priceAmount: 3000,
   },
   {
     id: "suprema-classico",
-    name: "Suprema Classico",
-    description: "Our signature showstopper, finished with coffee beans and mint.",
-    servings: "Serves 8–10",
-    requires: { eggs: 6, mascarpone: 500, savoiardi: 350, coffee: 150, butter: 100 },
+    name: "Suprema-misu Classico",
+    description: "12″. Coffee-soaked savoiardi, mascarpone cream, dusted with cocoa.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
     leadTimeDays: 4,
     unitsPerBatch: 2,
-    priceAmount: 4500,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "suprema-biscoff",
+    name: "Suprema-misu Biscoff",
+    description: "12″. Biscoff biscuit and caramelised spread, no coffee.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
+    leadTimeDays: 4,
+    unitsPerBatch: 2,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "suprema-pistacchio-nutella",
+    name: "Suprema-misu Pistacchio & Nutella",
+    description: "12″. Pistachio cream layered with Nutella, no coffee.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
+    leadTimeDays: 4,
+    unitsPerBatch: 2,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "suprema-oreo-white-chocolate",
+    name: "Suprema-misu Oreo & White Chocolate",
+    description: "12″. Crushed Oreo and white chocolate, no coffee.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
+    leadTimeDays: 4,
+    unitsPerBatch: 2,
+    priceAmount: PLACEHOLDER_PRICE,
+  },
+  {
+    id: "suprema-vegan-classico",
+    name: "Suprema-misu Vegan Classico",
+    description: "12″. The Classico, made without dairy or egg.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
+    leadTimeDays: 4,
+    unitsPerBatch: 2,
+    priceAmount: 3000,
+  },
+  {
+    id: "suprema-gf-classico",
+    name: "Suprema-misu GF Classico",
+    description: "12″. The Classico, made with gluten-free savoiardi.",
+    servings: "Serves ~20–25",
+    requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
+    leadTimeDays: 4,
+    unitsPerBatch: 2,
+    priceAmount: 3000,
   },
 ]
 
@@ -80,50 +248,92 @@ export const INITIAL_STOCK: Record<IngredientKey, number> = {
  * theirs. Same standing as the batch yields and the product prices, and the
  * Weddings screen labels them as placeholder so nobody quotes one.
  */
+/** What a stencilled message can say. */
+export const STENCIL_OPTIONS = ["Just married", "Happy birthday", "Just graduated"]
+
+/** The client's published wedding range. Real prices, real sizes. */
 export const WEDDING_PACKAGES: {
   id: string
   name: string
   description: string
   basePrice: number
+  serves: string
+  dimensions: string
+  stencilOptions: string[]
   includes: string[]
 }[] = [
   {
-    id: "classico-tier",
-    name: "Classico Tier",
-    description: "Two tiers of the Classico recipe, finished simply.",
-    basePrice: 45000,
-    includes: [
-      "Two tiers, serving up to 60",
-      "Cocoa-dusted finish",
-      "Delivery within Greater London",
-      "Cake stand on loan",
-    ],
+    id: "four-tier-cake",
+    name: "Four-tier cake",
+    description: "The full tiered centrepiece.",
+    basePrice: 39000,
+    serves: "Up to 83",
+    dimensions: "",
+    stencilOptions: [],
+    includes: ["Four tiers", "Serves up to 83", "Cake stand on loan (deposit refundable)"],
   },
   {
-    id: "celebration",
-    name: "Celebration",
-    description: "Three tiers with a cutting cake and a tasting session.",
-    basePrice: 78000,
-    includes: [
-      "Three tiers, serving up to 120",
-      "Matching cutting cake",
-      "Tasting session for two",
-      "Delivery and on-site setup",
-      "Stands and trays on loan",
-    ],
+    id: "classico-tray",
+    name: "Classico tray with stencil",
+    description: "A single large tray, finished with a stencilled message.",
+    basePrice: 15500,
+    serves: "Approx. 40",
+    dimensions: "32 x 52cm",
+    stencilOptions: STENCIL_OPTIONS,
+    includes: ["32 x 52cm tray", "Serves approx. 40", "Stencilled message", "Tray on loan (deposit refundable)"],
   },
   {
-    id: "grand-affair",
-    name: "Grand Affair",
-    description: "Five tiers, bespoke finish, staffed setup on the day.",
-    basePrice: 145000,
-    includes: [
-      "Five tiers, serving up to 250",
-      "Bespoke decoration to your brief",
-      "Tasting session for four",
-      "Delivery, setup and a member of staff on site",
-      "Full stand and tray hire",
-    ],
+    id: "classico-glass-dish",
+    name: "Classico glass dish with stencil",
+    description: "A glass dish, stencilled — the smaller of the two trays.",
+    basePrice: 5000,
+    serves: "Approx. 20",
+    dimensions: "39 x 27cm",
+    stencilOptions: STENCIL_OPTIONS,
+    includes: ["39 x 27cm glass dish", "Serves approx. 20", "Stencilled message", "Dish on loan (deposit refundable)"],
+  },
+]
+
+/**
+ * The client's priced extras.
+ *
+ * A catalogue rather than free-typed adjustments, so a quote is built from the
+ * published figures and can be checked against them afterwards.
+ */
+export const WEDDING_EXTRAS: {
+  id: string
+  name: string
+  description: string
+  unitPrice: number
+  unit: string
+  bulkFrom?: number
+  bulkDiscountPercent?: number
+}[] = [
+  { id: "pot-8oz", name: "8oz pot", description: "Individual portion.", unitPrice: 600, unit: "each" },
+  {
+    id: "cannoli-maxi",
+    name: "Maxi cannoli",
+    description: "10% off from 30 cannoli.",
+    unitPrice: 400,
+    unit: "each",
+    bulkFrom: 30,
+    bulkDiscountPercent: 10,
+  },
+  {
+    id: "cannoli-mini",
+    name: "Mini cannoli",
+    description: "10% off from 30 cannoli.",
+    unitPrice: 250,
+    unit: "each",
+    bulkFrom: 30,
+    bulkDiscountPercent: 10,
+  },
+  {
+    id: "delivery",
+    name: "Delivery",
+    description: "Up to 50 miles, minimum order £200. Collection is free.",
+    unitPrice: 300,
+    unit: "per mile",
   },
 ]
 
@@ -142,20 +352,28 @@ export const INITIAL_STAFF: StaffMember[] = [
 export const INITIAL_CALENDAR_SETTINGS: CalendarSettings = {
   // 1 = Monday. The shop does not do Monday collections.
   blockedWeekdays: [1],
-  earliestCollectionTime: "10:30",
+  earliestCollectionTime: "10:00",
   // Deliberately generous: a ceiling the shop is nowhere near today, present so
   // the rule exists and can be tightened without a schema change.
   maxOrdersPerProductionDay: 20,
   // Placeholder shop details, same status as the prices. Editable in Calendar
   // Rules so the email templates never hardcode them.
-  shopName: "Paradiso",
-  shopAddress: "42 Bermondsey Street, London SE1 3XF",
-  shopPhone: "020 7946 0112",
+  shopName: "Paradiso Authentic Italian",
+  shopAddress: "345 Sharrow Vale Road, Sheffield, S11 8ZG",
+  shopPhone: "01143215027",
+  shopEmail: "info@paradisoauthenticitalian.com",
+  shopOpeningHours: "Monday closed · Tuesday to Saturday 10:00–17:00 · Sunday 10:00–16:00",
   // Seeded at deposit — money has changed hands, so the booking is real enough
   // to plan around. The client will have a view; this is where they change it.
   weddingCapacityStage: "AtDeposit",
-  // PLACEHOLDER, same standing as the prices and batch yields.
-  weddingDepositPercent: 25,
+  // The client's real terms.
+  weddingDepositPercent: 50,
+  weddingBalanceDueDaysBefore: 14,
+  weddingQuoteTurnaround: "2-3 days",
+  deliveryPerMile: 300,
+  deliveryMaxMiles: 50,
+  deliveryMinimumOrder: 20000,
+  loanReturnDays: 7,
 }
 
 // Staff are now managed at runtime (added/removed/renamed via Staff Management), so

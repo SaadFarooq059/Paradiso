@@ -1,23 +1,29 @@
 import { test, expect } from "@playwright/test"
 
-import { batchFor, committed, placeOrder, readState, resetDemoData, signInViaApi } from "./support"
+import { batchFor, committed, placeOrder,
+  priceVariant, readState, resetDemoData, signInViaApi } from "./support"
 
 /**
  * Batching and yield.
  *
- * The kitchen bakes batches, not units. A Suprema batch draws 6 eggs and yields
+ * The kitchen bakes batches, not units. A Suprema batch draws 10 eggs and yields
  * two cakes, so one Suprema costs a whole batch and leaves a spare, a second is
  * free, and a third starts a new batch. These go through the API rather than the
  * date picker: they are assertions about the engine's arithmetic, and driving the
  * calendar four times over would test the picker instead.
  *
- * Seeded Suprema: 6 eggs per batch, yield 2, lead time 4 days.
+ * Seeded Suprema: 10 eggs per batch, yield 2, lead time 4 days.
  */
 
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   // The data routes require a session now, so the API-level specs need one too.
   await signInViaApi(page)
+  // Suprema and Grande have no published price, and an unpriced product cannot
+  // be ordered. These specs are about the kitchen, not the till, so they set a
+  // working price first.
+  await priceVariant(page, "suprema-classico", 4500)
+  await priceVariant(page, "grande-classico", 2800)
 })
 
 test("one Suprema runs a whole batch and leaves a spare unit", async ({ page }) => {
@@ -34,8 +40,8 @@ test("one Suprema runs a whole batch and leaves a spare unit", async ({ page }) 
   expect(batch!.surplusUnits).toBe(1)
 
   // A whole batch is drawn even though only half of it was ordered.
-  expect(batch!.amounts.eggs).toBe(6)
-  expect(committed(state, "eggs")).toBe(6)
+  expect(batch!.amounts.eggs).toBe(10)
+  expect(committed(state, "eggs")).toBe(10)
 })
 
 test("two Supremas share one batch and draw nothing extra", async ({ page }) => {
@@ -49,8 +55,8 @@ test("two Supremas share one batch and draw nothing extra", async ({ page }) => 
   expect(batch!.surplusUnits).toBe(0)
 
   // Identical draw to a single Suprema — the second cake was already being made.
-  expect(batch!.amounts.eggs).toBe(6)
-  expect(committed(state, "eggs")).toBe(6)
+  expect(batch!.amounts.eggs).toBe(10)
+  expect(committed(state, "eggs")).toBe(10)
 })
 
 test("three Supremas need two batches", async ({ page }) => {
@@ -64,8 +70,8 @@ test("three Supremas need two batches", async ({ page }) => {
   expect(batch!.capacityUnits).toBe(4)
   expect(batch!.surplusUnits).toBe(1)
 
-  expect(batch!.amounts.eggs).toBe(12)
-  expect(committed(state, "eggs")).toBe(12)
+  expect(batch!.amounts.eggs).toBe(20)
+  expect(committed(state, "eggs")).toBe(20)
 })
 
 test("an order added later slots into an existing partial batch without a new draw", async ({
@@ -75,7 +81,7 @@ test("an order added later slots into an existing partial batch without a new dr
   await placeOrder(page, "suprema-classico", 1)
   const before = await readState(page)
   expect(batchFor(before, "suprema-classico")!.surplusUnits).toBe(1)
-  expect(committed(before, "eggs")).toBe(6)
+  expect(committed(before, "eggs")).toBe(10)
 
   // A separate order, placed afterwards, for the same production day.
   const second = await placeOrder(page, "suprema-classico", 1)
@@ -100,13 +106,13 @@ test("a fourth Suprema does start a second batch", async ({ page }) => {
   // "extra units are always free".
   await placeOrder(page, "suprema-classico", 2)
   const before = await readState(page)
-  expect(committed(before, "eggs")).toBe(6)
+  expect(committed(before, "eggs")).toBe(10)
 
   await placeOrder(page, "suprema-classico", 1)
   const after = await readState(page)
 
   expect(batchFor(after, "suprema-classico")!.batches).toBe(2)
-  expect(committed(after, "eggs")).toBe(12)
+  expect(committed(after, "eggs")).toBe(20)
 })
 
 test("different variants on one production day are batched separately", async ({ page }) => {
@@ -140,12 +146,12 @@ test("an order records its per-unit share of the batch, not the whole batch", as
   const state = await readState(page)
   const order = state.orders[0]
 
-  // Suprema: 6 eggs per batch, yield 2. One cake is half a batch.
-  expect(order.consumedIngredients.eggs).toBe(3)
-  expect(order.consumedIngredients.mascarpone).toBe(250)
+  // Suprema: 10 eggs per batch, yield 2. One cake is half a batch.
+  expect(order.consumedIngredients.eggs).toBe(5)
+  expect(order.consumedIngredients.mascarpone).toBe(375)
 
   // The kitchen still drew the whole batch; the other half is surplus.
-  expect(batchFor(state, "suprema-classico")!.amounts.eggs).toBe(6)
+  expect(batchFor(state, "suprema-classico")!.amounts.eggs).toBe(10)
 })
 
 test("a later order joining the same batch does not rewrite the first order's share", async ({
@@ -154,7 +160,7 @@ test("a later order joining the same batch does not rewrite the first order's sh
   const first = await placeOrder(page, "suprema-classico", 1)
   const before = await readState(page)
   const firstBefore = before.orders.find((o) => o.id === first.orderId)!
-  expect(firstBefore.consumedIngredients.eggs).toBe(3)
+  expect(firstBefore.consumedIngredients.eggs).toBe(5)
 
   await placeOrder(page, "suprema-classico", 1)
 
@@ -164,10 +170,10 @@ test("a later order joining the same batch does not rewrite the first order's sh
 
   // Frozen at creation: the first order's record is untouched.
   expect(firstAfter.consumedIngredients).toEqual(firstBefore.consumedIngredients)
-  expect(second.consumedIngredients.eggs).toBe(3)
+  expect(second.consumedIngredients.eggs).toBe(5)
 
   // Both halves attributed, and together they equal the batch that was drawn.
-  expect(batchFor(after, "suprema-classico")!.amounts.eggs).toBe(6)
+  expect(batchFor(after, "suprema-classico")!.amounts.eggs).toBe(10)
 })
 
 test("shares are fractional when a batch yields many units", async ({ page }) => {
@@ -197,7 +203,7 @@ test("a cancelled order keeps its share on record but frees the batch", async ({
 
   expect(cancelled.status).toBe("Cancelled")
   // The snapshot survives as the record of what the order was for...
-  expect(cancelled.consumedIngredients.eggs).toBe(3)
+  expect(cancelled.consumedIngredients.eggs).toBe(5)
   // ...while the batch it booked disappears, and on-hand never moved.
   expect(after.productionDemand).toHaveLength(0)
   expect(after.capacity.eggs).toBe(20)

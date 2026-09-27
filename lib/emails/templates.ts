@@ -28,6 +28,8 @@ export interface TemplateContext {
   shopName: string
   shopAddress: string
   shopPhone: string
+  shopEmail: string
+  shopOpeningHours: string
 }
 
 export interface RenderedEmail {
@@ -48,7 +50,11 @@ function collectionLine(c: TemplateContext): string {
 function signOff(c: TemplateContext): string {
   const lines = [`— ${c.shopName}`]
   if (c.shopAddress) lines.push(c.shopAddress)
-  if (c.shopPhone) lines.push(c.shopPhone)
+  // Phone and email on one line, so the sign-off stays three or four lines
+  // rather than becoming a wall.
+  const contact = [c.shopPhone, c.shopEmail].filter(Boolean).join(" · ")
+  if (contact) lines.push(contact)
+  if (c.shopOpeningHours) lines.push(c.shopOpeningHours)
   return lines.join("\n")
 }
 

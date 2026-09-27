@@ -7,6 +7,7 @@ import {
   confirmOrder,
   orderAction,
   placeOrder,
+  priceVariant,
   readState,
   resetDemoData,
   signInViaApi,
@@ -26,6 +27,11 @@ const SUPREMA = "suprema-classico"
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInViaApi(page)
+  // Suprema and Grande have no published price, and an unpriced product cannot
+  // be ordered. These specs are about the kitchen, not the till, so they set a
+  // working price first.
+  await priceVariant(page, "suprema-classico", 4500)
+  await priceVariant(page, "grande-classico", 2800)
 })
 
 async function statusOf(page: Parameters<typeof readState>[0], orderId: string) {
@@ -51,14 +57,14 @@ test.describe("confirming does not book the kitchen", () => {
     await orderAction(page, confirmed.orderId!, "schedule")
     expect(await statusOf(page, confirmed.orderId!)).toBe("Scheduled")
 
-    // Two Supremas are one batch (yield 2), so six eggs, not twelve.
+    // Two Supremas are one batch (yield 2), so ten eggs, not twenty.
     const afterSchedule = await readState(page)
-    expect(committed(afterSchedule, "eggs")).toBe(6)
+    expect(committed(afterSchedule, "eggs")).toBe(10)
     expect(batchFor(afterSchedule, SUPREMA)?.batches).toBe(1)
   })
 
   test("scheduling beyond stock puts the order on hold, holding nothing", async ({ page }) => {
-    // Twenty eggs on hand; each Suprema batch takes six and yields two.
+    // Twenty eggs on hand; each Suprema batch takes ten and yields two.
     const big = await confirmOrder(page, SUPREMA, 14)
     await orderAction(page, big.orderId!, "schedule")
 
@@ -73,7 +79,7 @@ test.describe("confirming does not book the kitchen", () => {
 test.describe("stock is released on cancel", () => {
   test("cancelling a scheduled order frees its ingredients", async ({ page }) => {
     const order = await placeOrder(page, SUPREMA, 2)
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     await orderAction(page, order.orderId!, "cancel")
 
@@ -85,7 +91,7 @@ test.describe("stock is released on cancel", () => {
 
   test("querying an order also frees them — it is not proceeding either", async ({ page }) => {
     const order = await placeOrder(page, SUPREMA, 2)
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     await orderAction(page, order.orderId!, "query", { note: "Which day exactly?" })
 
@@ -99,7 +105,7 @@ test.describe("stock is released on cancel", () => {
     expect(committed(await readState(page), "eggs")).toBe(0)
 
     await orderAction(page, order.orderId!, "schedule")
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
   })
 })
 
@@ -115,7 +121,7 @@ test.describe("stock is NOT moved by a refund", () => {
 
     // Collected is still live: those ingredients were genuinely used, and
     // handing them back would invent capacity that does not exist.
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     await orderAction(page, id, "pay", { amount: 9000 })
     const refund = await orderAction(page, id, "refund", { amount: 9000 })
@@ -124,7 +130,7 @@ test.describe("stock is NOT moved by a refund", () => {
     // The refund moved money and nothing else.
     expect(await statusOf(page, id)).toBe("Collected or delivered")
     const after = await readState(page)
-    expect(committed(after, "eggs")).toBe(6)
+    expect(committed(after, "eggs")).toBe(10)
 
     const refunded = after.orders.find((o) => o.id === id)
     expect(refunded?.payment.refunded).toBe(9000)
@@ -140,7 +146,7 @@ test.describe("stock is NOT moved by a refund", () => {
 
     // Still Scheduled, still holding its ingredients. Only a cancel frees them.
     expect(await statusOf(page, id)).toBe("Scheduled")
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     const state = await readState(page)
     expect(state.orders.find((o) => o.id === id)?.payment.state).toBe("Partially refunded")
@@ -151,7 +157,7 @@ test.describe("stock is NOT moved by a refund", () => {
     const id = order.orderId!
 
     await orderAction(page, id, "pay", { amount: 9000 })
-    expect(committed(await readState(page), "eggs")).toBe(6)
+    expect(committed(await readState(page), "eggs")).toBe(10)
 
     const result = await orderAction(page, id, "cancel-and-refund", { amount: 9000 })
     expect(result.tone).toBe("success")
@@ -167,9 +173,37 @@ test.describe("stock is NOT moved by a refund", () => {
   })
 })
 
+test.describe("an unpriced product cannot be sold", () => {
+  test("ordering one is refused rather than totalling nothing", async ({ page }) => {
+    // Part of the range has no published price. Selling one would write a £0.00
+    // order and call it agreed — the same silent-zero that priced a live wedding
+    // quote at £80 instead of £860.
+    const state = await readState(page)
+    const unpriced = state.variants.find((v) => v.priceAmount === 0)
+    expect(unpriced, "the range should still contain an unpriced product").toBeDefined()
+
+    const result = await confirmOrder(page, unpriced!.id, 1)
+    expect(result.tone).toBe("error")
+    expect(result.message).toContain("no published price")
+    expect((await readState(page)).orders).toHaveLength(0)
+  })
+
+  test("pricing it first lets the order through", async ({ page }) => {
+    const state = await readState(page)
+    const unpriced = state.variants.find((v) => v.priceAmount === 0)!
+
+    await priceVariant(page, unpriced.id, 2200)
+    const result = await confirmOrder(page, unpriced.id, 1)
+
+    expect(result.tone).toBe("success")
+    const after = await readState(page)
+    expect(after.orders.find((o) => o.id === result.orderId)?.payment.total).toBe(2200)
+  })
+})
+
 test.describe("the payment ledger", () => {
   test("totals derive from the variant price and the ledger, in pence", async ({ page }) => {
-    // Suprema is seeded at £45.00; two of them is £90.00.
+    // Suprema has no published price, so these specs set £45.00; two is £90.00.
     const order = await placeOrder(page, SUPREMA, 2)
     const id = order.orderId!
 
@@ -229,7 +263,7 @@ test.describe("customer messages", () => {
     expect(emails[0].status).toBe("Ready to send")
     expect(emails[0].toEmail).toBe("test.customer@example.com")
     // Rendered from real order data, not a placeholder.
-    expect(emails[0].body).toContain("Suprema Classico")
+    expect(emails[0].body).toContain("Suprema-misu Classico")
     expect(emails[0].body).toContain("£45.00")
 
     await orderAction(page, confirmed.orderId!, "schedule")

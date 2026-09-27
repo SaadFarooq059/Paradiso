@@ -12,7 +12,7 @@ import { WeddingEnquiryForm } from "@/components/dashboard/wedding-enquiry-form"
 import { formatDateLong } from "@/lib/format-date"
 import { formatMoney } from "@/lib/payments"
 import { DEAD_STAGES, WEDDING_STAGE_LABEL, type WeddingStage } from "@/lib/weddings"
-import type { CalendarSettings, ProductVariant, Wedding, WeddingPackage } from "@/lib/types"
+import type { CalendarSettings, ProductVariant, Wedding, WeddingExtra, WeddingPackage } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /**
@@ -39,6 +39,7 @@ const STAGE_CLASS: Record<string, string> = {
 export function WeddingsPanel({
   weddings,
   packages,
+  extras,
   variants,
   settings,
   canManage,
@@ -49,6 +50,7 @@ export function WeddingsPanel({
 }: {
   weddings: Wedding[]
   packages: WeddingPackage[]
+  extras: WeddingExtra[]
   variants: ProductVariant[]
   settings: CalendarSettings
   canManage: boolean
@@ -80,6 +82,7 @@ export function WeddingsPanel({
         <WeddingDetail
           wedding={selected}
           packages={packages}
+          extras={extras}
           variants={variants}
           settings={settings}
           canManage={canManage}
