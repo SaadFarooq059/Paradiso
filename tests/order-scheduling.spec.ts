@@ -74,8 +74,8 @@ async function submitOrder(page: Page, productName: string, quantity: number) {
 test("order sequence: stock deduction, round-robin staff, and on-hold shortage", async ({ page }) => {
   await resetDemoData(page)
   await signIn(page)
-  // Neither size has a published price, and an unpriced product cannot be
-  // ordered. This spec is about stock and staffing, so it prices them first.
+  // Both larger sizes carry estimated prices. This spec asserts exact stock
+  // arithmetic, so it pins them rather than depending on an estimate.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 

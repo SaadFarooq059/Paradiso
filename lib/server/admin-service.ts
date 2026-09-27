@@ -25,6 +25,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         leadTimeDays: variant.leadTimeDays,
         unitsPerBatch: variant.unitsPerBatch,
         priceAmount: variant.priceAmount,
+        priceEstimated: variant.priceEstimated ?? false,
       },
       update: {
         name: variant.name,
@@ -34,6 +35,7 @@ export async function saveVariant(variant: ProductVariant): Promise<MutationResu
         leadTimeDays: variant.leadTimeDays,
         unitsPerBatch: variant.unitsPerBatch,
         priceAmount: variant.priceAmount,
+        priceEstimated: variant.priceEstimated ?? false,
       },
     })
 

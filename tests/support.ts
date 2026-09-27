@@ -79,6 +79,8 @@ export interface DashboardState {
     id: string
     name: string
     priceAmount: number
+    priceEstimated?: boolean
+    description: string
     leadTimeDays: number
     unitsPerBatch: number
     requires: Record<string, number>

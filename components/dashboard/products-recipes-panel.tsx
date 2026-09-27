@@ -29,6 +29,8 @@ type FormState = {
   unitsPerBatch: string
   /** Pounds and pence as typed, e.g. "28.00". Converted to pence on save. */
   price: string
+  /** Carried so the form can say so, and cleared the moment someone edits it. */
+  priceEstimated: boolean
   amounts: Record<IngredientKey, string>
 }
 
@@ -46,6 +48,7 @@ function toFormState(variant: ProductVariant | null): FormState {
       leadTimeDays: "2",
       unitsPerBatch: "1",
       price: "",
+      priceEstimated: false,
       amounts: emptyAmounts(),
     }
   }
@@ -62,6 +65,7 @@ function toFormState(variant: ProductVariant | null): FormState {
     leadTimeDays: String(variant.leadTimeDays),
     unitsPerBatch: String(variant.unitsPerBatch),
     price: (variant.priceAmount / 100).toFixed(2),
+    priceEstimated: variant.priceEstimated ?? false,
     amounts,
   }
 }
@@ -113,6 +117,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       description: editing.description.trim(),
       servings: editing.servings.trim(),
       priceAmount,
+      priceEstimated: editing.priceEstimated,
       requires,
       leadTimeDays: parsedLeadTime,
       unitsPerBatch: parsedYield,
@@ -192,18 +197,27 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                     inputMode="decimal"
                     placeholder="0.00"
                     value={editing.price}
-                    onChange={(e) => setEditing({ ...editing, price: e.target.value })}
+                    // Typing a price is someone confirming it, so the estimate
+                    // marker goes as soon as they do.
+                    onChange={(e) =>
+                      setEditing({ ...editing, price: e.target.value, priceEstimated: false })
+                    }
                   />
                   <FieldDescription>
                     In pounds. Order totals are worked out from this and frozen when the order is
                     taken, so repricing never restates an existing quote.{" "}
                     {editing.price.trim() === "" || parseMoney(editing.price) === 0 ? (
                       <strong className="font-medium text-destructive">
-                        No published price — Grande and Suprema prices are not on the client&apos;s
-                        site, so this must not be quoted until they confirm it.
+                        No price set — an order for this product will be refused until one is.
+                      </strong>
+                    ) : editing.priceEstimated ? (
+                      <strong className="font-medium text-warning">
+                        Estimated, pending confirmation — extrapolated from the published Mini-misu
+                        prices at {formatMoney(375)} a serving. Saving a price you have confirmed
+                        with the client clears this.
                       </strong>
                     ) : (
-                      <>Mini-misu prices come from the client&apos;s published range.</>
+                      <>From the client&apos;s published range.</>
                     )}
                   </FieldDescription>
                 </Field>
@@ -287,13 +301,17 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
                       {variant.servings}
                       {variant.priceAmount > 0 ? ` · ${formatMoney(variant.priceAmount)}` : ""}
                     </p>
-                    {variant.priceAmount === 0 && (
+                    {variant.priceAmount === 0 ? (
                       // Said on the list, not only in the editor: someone
                       // quoting a Grande over the phone never opens the editor.
                       <p className="text-xs font-medium text-destructive">
-                        No published price — do not quote
+                        No price set — cannot be ordered
                       </p>
-                    )}
+                    ) : variant.priceEstimated ? (
+                      <p className="text-xs font-medium text-warning">
+                        Estimated — pending the client&apos;s confirmation
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <Button variant="ghost" size="icon-sm" onClick={() => startEdit(variant)}>
