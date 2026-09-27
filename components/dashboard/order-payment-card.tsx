@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { formatDateTime } from "@/lib/format-date"
+import { useAuth } from "@/components/auth/auth-context"
+import { can } from "@/lib/auth/roles"
 import { formatMoney, parseMoney } from "@/lib/payments"
 import type { Order, PaymentState } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -41,6 +43,12 @@ export function OrderPaymentCard({
   const { total, paid, refunded, state, events } = order.payment
   const outstanding = Math.max(total - paid, 0)
   const refundable = Math.max(paid - refunded, 0)
+
+  const { currentUser } = useAuth()
+  // Refunds are Admin-only: they move money out and there is no way back. The
+  // route refuses them regardless; this stops offering a button whose only
+  // outcome would be a 403.
+  const mayRefund = currentUser ? can(currentUser.role, "payments:refund") : false
 
   const [amount, setAmount] = useState("")
   const pence = parseMoney(amount)
@@ -101,19 +109,21 @@ export function OrderPaymentCard({
             Record payment
           </Button>
 
-          <Button
-            variant="outline"
-            disabled={!amountIsValid || refundable === 0 || (pence ?? 0) > refundable}
-            onClick={() => submit("refund", refundable)}
-          >
-            <Undo2 data-icon="inline-start" />
-            Record refund
-          </Button>
+          {mayRefund && (
+            <Button
+              variant="outline"
+              disabled={!amountIsValid || refundable === 0 || (pence ?? 0) > refundable}
+              onClick={() => submit("refund", refundable)}
+            >
+              <Undo2 data-icon="inline-start" />
+              Record refund
+            </Button>
+          )}
 
           {/* The common case as one click. It records two events, because the
               cancel is what frees the ingredients and the refund only moves
               money — collapsing them into one would lose that distinction. */}
-          {canCancel && (
+          {canCancel && mayRefund && (
             <Button
               variant="destructive"
               disabled={!amountIsValid || refundable === 0 || (pence ?? 0) > refundable}
