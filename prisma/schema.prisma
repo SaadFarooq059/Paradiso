@@ -19,6 +19,34 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Where a wedding or bespoke order has got to.
+///
+/// A separate lifecycle from OrderStatus on purpose. Enquiry, Quoted and Lost
+/// have no equivalent for a counter order, and a wedding is never converted
+/// into one — it books kitchen capacity directly through the same
+/// ProductionLine seam the projection already speaks.
+enum WeddingStage {
+  Enquiry
+  Quoted
+  DepositPaid  @map("Deposit paid")
+  Confirmed
+  InProduction @map("In production")
+  Delivered    @map("Delivered or collected")
+  Completed
+  Cancelled
+  Lost
+}
+
+/// At what stage a wedding starts holding ingredients and production capacity.
+///
+/// Deliberately a setting rather than a constant: the shop will have a view on
+/// it, and welding it in would make that view a code change.
+enum WeddingCapacityStage {
+  AtQuote        @map("At quote")
+  AtDeposit      @map("At deposit")
+  AtConfirmation @map("At final confirmation")
+}
+
 /// What a staff member is allowed to do.
 ///
 /// Enforced on the API routes by the capability matrix in lib/auth/roles.ts.
@@ -140,6 +168,7 @@ model ProductVariant {
 
   recipeItems RecipeItem[]
   orderItems  OrderItem[]
+  quoteTiers  QuoteTier[]
 
   @@map("product_variants")
 }
@@ -149,23 +178,29 @@ model ProductVariant {
 /// opening time in particular — and changing them must not need a deploy.
 /// Enforced as a singleton by pinning the id to 1.
 model CalendarSettings {
-  id                        Int    @id @default(1)
+  id                        Int                  @id @default(1)
   /// Weekday numbers that cannot be chosen for collection, using JavaScript's
   /// getDay() convention (0 = Sunday ... 6 = Saturday). Seeded as [1] — the shop
   /// does not do Monday collections. A real integer array on Postgres; on SQLite
   /// this had to be a JSON string that the application parsed by hand.
-  blockedWeekdays           Int[]  @default([1])
+  blockedWeekdays           Int[]                @default([1])
   /// Earliest time of day an order can be collected, as "HH:mm" in 24-hour form.
-  earliestCollectionTime    String @default("10:30")
+  earliestCollectionTime    String               @default("10:30")
   /// Ceiling on how many orders may share one production day. A future
   /// constraint rather than a current one, so it is seeded deliberately high.
-  maxOrdersPerProductionDay Int    @default(20)
+  maxOrdersPerProductionDay Int                  @default(20)
   /// Shop identity, used by the customer email templates. Here rather than
   /// hardcoded in a template so the Calendar Rules screen can edit it without a
   /// deploy — the same reasoning that moved the calendar rules out of code.
-  shopName                  String @default("Paradiso")
-  shopAddress               String @default("")
-  shopPhone                 String @default("")
+  shopName                  String               @default("Paradiso")
+  shopAddress               String               @default("")
+  shopPhone                 String               @default("")
+  /// At what stage a wedding starts holding ingredients and production capacity.
+  /// A setting rather than a constant: the shop will have a view on it, and
+  /// welding it in would make that view a code change.
+  weddingCapacityStage      WeddingCapacityStage @default(AtDeposit)
+  /// PLACEHOLDER deposit percentage, applied to a quote total.
+  weddingDepositPercent     Int                  @default(25)
 
   @@map("calendar_settings")
 }
@@ -236,9 +271,11 @@ model Staff {
   /// an equal count could be picked in either order between runs.
   sortOrder    Int       @default(0)
 
-  assignments   ProductionAssignment[]
-  statusChanges OrderStatusEvent[]
-  paymentEvents PaymentEvent[]
+  assignments        ProductionAssignment[]
+  statusChanges      OrderStatusEvent[]
+  paymentEvents      PaymentEvent[]
+  weddingStageEvents WeddingStageEvent[]
+  quotes             Quote[]
 
   @@map("staff")
 }
@@ -294,7 +331,8 @@ model Customer {
   phone     String?
   createdAt DateTime @default(now())
 
-  orders Order[]
+  orders   Order[]
+  weddings Wedding[]
 
   /// Not unique: the same household may order under one address, and enforcing
   /// uniqueness here would reject that without a merge flow to fall back on.
@@ -305,21 +343,29 @@ model Customer {
 /// Every movement of money, so "refunded partially" has an amount and a date
 /// rather than being a flag. The client's reporting asks for refunds by month,
 /// which a single column on Order cannot answer.
+/// Every movement of money, for an order OR a wedding.
+///
+/// One ledger, not two. Exactly one of orderId/weddingId is set, enforced by a
+/// database CHECK rather than by convention — a polymorphic subjectType/subjectId
+/// pair would have thrown away foreign-key integrity to save a column.
 model PaymentEvent {
-  id      Int              @id @default(autoincrement())
-  orderId String
-  kind    PaymentEventKind
+  id        Int              @id @default(autoincrement())
+  orderId   String?
+  weddingId String?
+  kind      PaymentEventKind
   /// Always positive, in pence. Direction comes from `kind`.
-  amount  Int
-  at      DateTime         @default(now())
+  amount    Int
+  at        DateTime         @default(now())
   /// Who recorded it. Null for anything written before actors were tracked.
-  actorId String?
-  note    String?
+  actorId   String?
+  note      String?
 
-  order Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  actor Staff? @relation(fields: [actorId], references: [id])
+  order   Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  wedding Wedding? @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  actor   Staff?   @relation(fields: [actorId], references: [id])
 
   @@index([orderId])
+  @@index([weddingId])
   @@map("payment_events")
 }
 
@@ -410,4 +456,167 @@ model RestockEntry {
   ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
   @@map("restock_entries")
+}
+
+/// A named wedding package. Seeded with plausible placeholders — the client has
+/// not given us real prices, the same standing as the batch yields.
+model WeddingPackage {
+  id          String   @id
+  name        String
+  description String
+  /// PLACEHOLDER base price, in pence.
+  basePrice   Int
+  /// What the package includes, one line each.
+  includes    String[]
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  quotes Quote[]
+
+  @@map("wedding_packages")
+}
+
+/// A wedding or bespoke order.
+///
+/// Never becomes an Order. Putting venue, guest count and dietary requirements
+/// on Order would make them nullable on every counter tiramisù ever sold, and
+/// the lifecycles genuinely differ. It books capacity directly instead.
+model Wedding {
+  id        String       @id @default(uuid())
+  /// Human-readable, for talking to the customer about it.
+  reference String       @unique
+  stage     WeddingStage @default(Enquiry)
+
+  customerId String
+
+  /// The day of the event. Stored as a shop-time moment, like a collection date.
+  eventDate           DateTime
+  venue               String
+  guestCount          Int
+  /// Free text for now; the client has not given us a flavour list.
+  flavourNotes        String   @default("")
+  dietaryRequirements String   @default("")
+  notes               String   @default("")
+
+  /// People and vehicles the event needs. Both are named in the client's document.
+  staffRequired   Int @default(0)
+  driversRequired Int @default(0)
+
+  /// The quote currently in force. Amendments create a new version and move this.
+  currentQuoteId String? @unique
+
+  /// When this wedding started holding kitchen capacity.
+  ///
+  /// STORED, not derived from (stage, setting). That is the whole point: if it
+  /// were derived, tightening weddingCapacityStage would silently un-book every
+  /// wedding that had already committed, and the kitchen would over-sell stock
+  /// it had already promised. Once set, only cancelling clears it.
+  capacityBookedAt DateTime?
+
+  /// When the remaining balance is due. Null until there is a quote.
+  balanceDueDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  currentQuote Quote?              @relation("CurrentQuote", fields: [currentQuoteId], references: [id])
+  quotes       Quote[]             @relation("WeddingQuotes")
+  payments     PaymentEvent[]
+  loans        EquipmentLoan[]
+  stageHistory WeddingStageEvent[]
+
+  @@index([customerId])
+  @@index([eventDate])
+  @@map("weddings")
+}
+
+/// One version of what was agreed.
+///
+/// Amendments write a new version and supersede the old one; nothing is ever
+/// updated in place, so "what did we agree in March" stays answerable. The tiers
+/// hang off the quote rather than the wedding for the same reason — changing the
+/// cake changes the quote.
+model Quote {
+  id        String  @id @default(uuid())
+  weddingId String
+  version   Int
+  packageId String?
+
+  /// All in pence, frozen at this version.
+  basePrice   Int
+  /// [{ label, amount }] — named adjustments, positive or negative.
+  adjustments Json @default("[]")
+  total       Int
+  /// The guest count this version was costed for.
+  guestCount  Int
+
+  note         String?
+  createdAt    DateTime  @default(now())
+  actorId      String?
+  /// Set when a later version replaces this one.
+  supersededAt DateTime?
+
+  wedding    Wedding         @relation("WeddingQuotes", fields: [weddingId], references: [id], onDelete: Cascade)
+  currentFor Wedding?        @relation("CurrentQuote")
+  package    WeddingPackage? @relation(fields: [packageId], references: [id])
+  actor      Staff?          @relation(fields: [actorId], references: [id])
+  tiers      QuoteTier[]
+
+  @@unique([weddingId, version])
+  @@index([weddingId])
+  @@map("wedding_quotes")
+}
+
+/// A tier of the cake, as a quantity of an existing product variant.
+///
+/// Reusing ProductVariant is what lets a wedding feed the same batching and
+/// stock projection as everything else — a tier is units of a recipe, which is
+/// exactly what a ProductionLine is made of.
+model QuoteTier {
+  id        Int    @id @default(autoincrement())
+  quoteId   String
+  variantId String
+  quantity  Int
+  /// "Bottom tier", "Cutting cake" — what the kitchen calls it.
+  label     String @default("")
+
+  quote   Quote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([quoteId])
+  @@map("wedding_quote_tiers")
+}
+
+/// Trays and cake stands out on loan. Explicitly in the client's document.
+model EquipmentLoan {
+  id         Int       @id @default(autoincrement())
+  weddingId  String
+  item       String
+  quantity   Int       @default(1)
+  outAt      DateTime?
+  returned   Boolean   @default(false)
+  returnedAt DateTime?
+  note       String?
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+
+  @@index([weddingId])
+  @@map("equipment_loans")
+}
+
+/// Every stage a wedding has been through, and who moved it.
+model WeddingStageEvent {
+  id        Int          @id @default(autoincrement())
+  weddingId String
+  stage     WeddingStage
+  at        DateTime     @default(now())
+  note      String?
+  actorId   String?
+
+  wedding Wedding @relation(fields: [weddingId], references: [id], onDelete: Cascade)
+  actor   Staff?  @relation(fields: [actorId], references: [id])
+
+  @@index([weddingId])
+  @@map("wedding_stage_events")
 }

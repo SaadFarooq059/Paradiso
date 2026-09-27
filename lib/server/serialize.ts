@@ -10,6 +10,8 @@ import type {
   ProductVariant,
   ShortageReason,
   StaffMember,
+  Wedding,
+  WeddingPackage,
 } from "@/lib/types"
 
 /**
@@ -22,6 +24,10 @@ type DbOrderStatus = $Enums.OrderStatus
 
 export interface SerializedOrder extends Omit<Order, "collectionDate"> {
   collectionDate: string
+}
+
+export interface SerializedWedding extends Omit<Wedding, "eventDate"> {
+  eventDate: string
 }
 
 export interface SerializedProductionDayDemand {
@@ -60,6 +66,9 @@ export interface DashboardState {
    * second round trip every time the selected product changes.
    */
   calendarSettings: CalendarSettings
+  /** Weddings and bespoke orders, newest event first. */
+  weddings: SerializedWedding[]
+  weddingPackages: WeddingPackage[]
 }
 
 /**

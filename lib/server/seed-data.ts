@@ -10,6 +10,7 @@ import {
   INITIAL_STAFF,
   INITIAL_STOCK,
   PRODUCT_VARIANTS,
+  WEDDING_PACKAGES,
 } from "@/lib/mock-data"
 
 /**
@@ -22,13 +23,27 @@ import {
  */
 export async function seedDatabase() {
   await prisma.$transaction(async (tx) => {
-    // Children first so re-seeding a populated database is safe.
+    // Children before parents, all the way down, so re-seeding a populated
+    // database is safe. Customers are late in the list because both orders and
+    // weddings point at them — deleting them first is a foreign key violation,
+    // which is the database correctly refusing to orphan a wedding.
     await tx.productionAssignment.deleteMany()
     await tx.emailMessage.deleteMany()
     await tx.paymentEvent.deleteMany()
     await tx.orderStatusEvent.deleteMany()
     await tx.orderItem.deleteMany()
     await tx.order.deleteMany()
+
+    await tx.weddingStageEvent.deleteMany()
+    await tx.equipmentLoan.deleteMany()
+    await tx.quoteTier.deleteMany()
+    // The wedding points at its current quote and the quote points back, so the
+    // link has to be broken before either can go.
+    await tx.wedding.updateMany({ data: { currentQuoteId: null } })
+    await tx.quote.deleteMany()
+    await tx.wedding.deleteMany()
+    await tx.weddingPackage.deleteMany()
+
     await tx.customer.deleteMany()
     await tx.restockEntry.deleteMany()
     await tx.stockLevel.deleteMany()
@@ -98,6 +113,19 @@ export async function seedDatabase() {
       })
     }
 
+    for (const [index, pkg] of WEDDING_PACKAGES.entries()) {
+      await tx.weddingPackage.create({
+        data: {
+          id: pkg.id,
+          name: pkg.name,
+          description: pkg.description,
+          basePrice: pkg.basePrice,
+          includes: pkg.includes,
+          sortOrder: index,
+        },
+      })
+    }
+
     // Pinned id: calendar_settings is a singleton, and every reader looks it up
     // by id 1 rather than taking "the first row".
     await tx.calendarSettings.create({
@@ -109,6 +137,8 @@ export async function seedDatabase() {
         shopName: INITIAL_CALENDAR_SETTINGS.shopName,
         shopAddress: INITIAL_CALENDAR_SETTINGS.shopAddress,
         shopPhone: INITIAL_CALENDAR_SETTINGS.shopPhone,
+        weddingCapacityStage: INITIAL_CALENDAR_SETTINGS.weddingCapacityStage,
+        weddingDepositPercent: INITIAL_CALENDAR_SETTINGS.weddingDepositPercent,
       },
     })
   })

@@ -1,13 +1,19 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CalendarCog, Store } from "lucide-react"
+import { CalendarCog, HeartHandshake, Store } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  CAPACITY_STAGE_LABEL,
+  CAPACITY_STAGE_SUMMARY,
+  type WeddingCapacityStage,
+} from "@/lib/weddings"
 import type { CalendarSettings, Weekday } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -38,6 +44,10 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
   const [shopName, setShopName] = useState(settings.shopName)
   const [shopAddress, setShopAddress] = useState(settings.shopAddress)
   const [shopPhone, setShopPhone] = useState(settings.shopPhone)
+  const [capacityStage, setCapacityStage] = useState<WeddingCapacityStage>(
+    settings.weddingCapacityStage
+  )
+  const [depositPercent, setDepositPercent] = useState(String(settings.weddingDepositPercent))
 
   // Adopt whatever the server last confirmed, so a save (or another admin's
   // change arriving with a refresh) is reflected rather than silently overwritten
@@ -49,6 +59,8 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
     setShopName(settings.shopName)
     setShopAddress(settings.shopAddress)
     setShopPhone(settings.shopPhone)
+    setCapacityStage(settings.weddingCapacityStage)
+    setDepositPercent(String(settings.weddingDepositPercent))
   }, [settings])
 
   const parsedMax = Number.parseInt(maxOrders, 10)
@@ -58,7 +70,10 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
   const daysAreValid = blocked.length < 7
   // The shop's name goes out in every customer email, so it cannot be blank.
   const nameIsValid = shopName.trim().length > 0
-  const isValid = timeIsValid && maxIsValid && daysAreValid && nameIsValid
+  const parsedDeposit = Number.parseInt(depositPercent, 10)
+  const depositIsValid = Number.isFinite(parsedDeposit) && parsedDeposit >= 0 && parsedDeposit <= 100
+  const stageChanged = capacityStage !== settings.weddingCapacityStage
+  const isValid = timeIsValid && maxIsValid && daysAreValid && nameIsValid && depositIsValid
 
   function toggleDay(day: Weekday) {
     setBlocked((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
@@ -74,6 +89,8 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
       shopName: shopName.trim(),
       shopAddress: shopAddress.trim(),
       shopPhone: shopPhone.trim(),
+      weddingCapacityStage: capacityStage,
+      weddingDepositPercent: parsedDeposit,
     })
   }
 
@@ -169,6 +186,77 @@ export function CalendarRulesPanel({ settings, onSave }: CalendarRulesPanelProps
           </FieldGroup>
         </CardContent>
 
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HeartHandshake className="size-4 shrink-0 text-muted-foreground" />
+            Weddings and bespoke orders
+          </CardTitle>
+          <CardDescription>
+            When a wedding starts holding ingredients and production capacity, and what deposit is
+            asked for.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup className="@3xl:grid @3xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] @3xl:items-start @3xl:gap-8">
+            <Field>
+              <FieldLabel htmlFor="capacity-stage">Books the kitchen</FieldLabel>
+              <Select
+                value={capacityStage}
+                onValueChange={(value) => setCapacityStage(value as WeddingCapacityStage)}
+              >
+                <SelectTrigger id="capacity-stage" className="w-full">
+                  <SelectValue>
+                    {(value: string | null) =>
+                      value ? CAPACITY_STAGE_LABEL[value as WeddingCapacityStage] : "Choose a stage"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(CAPACITY_STAGE_LABEL) as WeddingCapacityStage[]).map((stage) => (
+                    <SelectItem key={stage} value={stage}>
+                      {CAPACITY_STAGE_LABEL[stage]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>{CAPACITY_STAGE_SUMMARY[capacityStage]}</FieldDescription>
+              {stageChanged && (
+                // Said before saving, not after: this decides whether existing
+                // weddings gain or keep capacity, and nobody should discover
+                // that from a toast.
+                <div className="mt-1 rounded-lg border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                  <span className="font-medium text-foreground">What happens on save: </span>
+                  weddings already holding capacity <span className="font-medium text-foreground">keep it</span>,
+                  whatever this becomes — freeing ingredients the kitchen has promised would strand
+                  the demand silently. Weddings that now qualify are booked if the stock allows, and
+                  any that don&apos;t fit are named rather than skipped quietly.
+                </div>
+              )}
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="deposit-percent">Deposit</FieldLabel>
+              <Input
+                id="deposit-percent"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={depositPercent}
+                onChange={(e) => setDepositPercent(e.target.value)}
+                aria-invalid={!depositIsValid}
+              />
+              <FieldDescription>
+                Percentage of the quoted total.{" "}
+                <strong className="font-medium text-foreground">Placeholder</strong> — the client
+                hasn&apos;t given us their real figure.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </CardContent>
       </Card>
 
       {/* Separate card: these are not scheduling rules, they are what the shop

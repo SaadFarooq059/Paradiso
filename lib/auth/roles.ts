@@ -49,6 +49,11 @@ export type Capability =
   | "reports:view"
   | "production:view"
   | "stock:view"
+  // --- weddings -------------------------------------------------------------
+  /** See the wedding pipeline at all. */
+  | "weddings:view"
+  /** Log an enquiry, quote it, amend it, move it along. */
+  | "weddings:manage"
   // --- administration -------------------------------------------------------
   | "stock:restock"
   | "recipes:manage"
@@ -68,6 +73,8 @@ const ADMIN: Capability[] = [
   "reports:view",
   "production:view",
   "stock:view",
+  "weddings:view",
+  "weddings:manage",
   "stock:restock",
   "recipes:manage",
   "staff:manage",
@@ -92,6 +99,8 @@ const MANAGER: Capability[] = [
   "reports:view",
   "production:view",
   "stock:view",
+  "weddings:view",
+  "weddings:manage",
   "stock:restock",
 ]
 
@@ -102,7 +111,12 @@ const MANAGER: Capability[] = [
  * this role is served, because a screen that never receives a phone number
  * cannot leak one.
  */
-const KITCHEN: Capability[] = ["orders:advance:production", "production:view", "stock:view"]
+const KITCHEN: Capability[] = [
+  "orders:advance:production",
+  "production:view",
+  "stock:view",
+  "weddings:view",
+]
 
 /** The counter: take the order, take the money, hand it over. */
 const SHOP_FLOOR: Capability[] = [
@@ -113,6 +127,8 @@ const SHOP_FLOOR: Capability[] = [
   "payments:record",
   "customers:view",
   "stock:view",
+  "weddings:view",
+  "weddings:manage",
 ]
 
 const CAPABILITIES: Record<StaffRole, Capability[]> = {
@@ -174,12 +190,14 @@ export const VIEW_CAPABILITY: Record<string, Capability | undefined> = {
   reports: "reports:view",
   staff: "staff:manage",
   "calendar-rules": "settings:manage",
+  weddings: "weddings:view",
 }
 
 /** The order a role is offered screens in; the first it can use is where it lands. */
 const VIEW_ORDER = [
   "new-order",
   "orders",
+  "weddings",
   "calendar",
   "stock",
   "reports",
@@ -187,6 +205,7 @@ const VIEW_ORDER = [
   "restock",
   "staff",
   "calendar-rules",
+  "weddings",
 ]
 
 export function canUseView(role: StaffRole, view: string): boolean {

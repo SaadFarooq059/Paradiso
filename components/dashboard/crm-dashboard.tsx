@@ -13,13 +13,13 @@ import { ProductionCalendarPanel } from "@/components/dashboard/production-calen
 import { PreviewAccountsSyncPanel } from "@/components/dashboard/preview-accounts-sync-panel"
 import { PreviewCustomerWebsitePanel } from "@/components/dashboard/preview-customer-website-panel"
 import { PreviewStaffLoginsPanel } from "@/components/dashboard/preview-staff-logins-panel"
-import { PreviewWeddingEnquiriesPanel } from "@/components/dashboard/preview-wedding-enquiries-panel"
 import { ProductsRecipesPanel } from "@/components/dashboard/products-recipes-panel"
 import { ReportsAnalyticsPanel } from "@/components/dashboard/reports-analytics-panel"
 import { type DashboardView, isPreviewView, SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { CalendarRulesPanel } from "@/components/dashboard/calendar-rules-panel"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
+import { WeddingsPanel } from "@/components/dashboard/weddings-panel"
 import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 import { can, canUseView, landingViewFor } from "@/lib/auth/roles"
@@ -30,6 +30,10 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
   "new-order": {
     title: "New Order",
     description: "Take an order and confirm it. Scheduling it books the kitchen.",
+  },
+  weddings: {
+    title: "Weddings",
+    description: "Enquiries, quotes and bespoke orders, from first contact to delivered.",
   },
   orders: {
     title: "Orders",
@@ -71,10 +75,6 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
     title: "Customer Website",
     description: "Preview only — how a customer would order from the website themselves.",
   },
-  "preview-weddings": {
-    title: "Wedding Enquiries",
-    description: "Preview only — how wedding enquiries, quotes and deposits would be handled.",
-  },
   "preview-accounts": {
     title: "Accounts Sync",
     description: "Preview only — how a completed order would raise an invoice in the accounts package.",
@@ -96,7 +96,9 @@ export function CrmDashboard() {
   // date would reappear on every later visit to the screen.
   const [prefilledDate, setPrefilledDate] = useState<Date | null>(null)
 
-  const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand } =
+  const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand,
+    weddings,
+    weddingPackages } =
     data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
@@ -276,6 +278,21 @@ export function CrmDashboard() {
                   onSubmit={handleNewOrder}
                 />
               )}
+              {view === "weddings" && (
+                <WeddingsPanel
+                  weddings={weddings}
+                  packages={weddingPackages}
+                  variants={variants}
+                  settings={calendarSettings}
+                  canManage={can(currentUser.role, "weddings:manage")}
+                  onCreate={(input) => void mutate("/api/weddings", { body: JSON.stringify(input) })}
+                  onAction={(weddingId, action, payload) =>
+                    void mutate(`/api/weddings/${weddingId}`, {
+                      body: JSON.stringify({ action, ...payload }),
+                    })
+                  }
+                />
+              )}
               {view === "orders" && (
                 <OrdersTable orders={orders} variantsById={variantsById} onSelectOrder={setSelectedOrderId} />
               )}
@@ -285,6 +302,7 @@ export function CrmDashboard() {
                   variantsById={variantsById}
                   staff={staff}
                   productionDemand={productionDemand}
+                  weddings={weddings}
                   onHand={capacity}
                   onScheduleForDate={handleScheduleForDate}
                   selectedDate={calendarDate}
@@ -328,7 +346,6 @@ export function CrmDashboard() {
               {/* Coming Soon mockups — static markup only, no app state touched. */}
               {view === "preview-logins" && <PreviewStaffLoginsPanel />}
               {view === "preview-storefront" && <PreviewCustomerWebsitePanel />}
-              {view === "preview-weddings" && <PreviewWeddingEnquiriesPanel />}
               {view === "preview-accounts" && <PreviewAccountsSyncPanel />}
             </>
           )}

@@ -56,6 +56,10 @@ export interface CalendarSettings {
   shopName: string
   shopAddress: string
   shopPhone: string
+  /** At what stage a wedding starts holding ingredients and production capacity. */
+  weddingCapacityStage: WeddingCapacityStage
+  /** PLACEHOLDER deposit percentage applied to a quote total. */
+  weddingDepositPercent: number
 }
 
 export type StaffName = string
@@ -66,6 +70,7 @@ export type StaffName = string
  */
 export type { StaffRole } from "@/lib/auth/roles"
 import type { StaffRole } from "@/lib/auth/roles"
+import type { WeddingCapacityStage } from "@/lib/weddings"
 
 /**
  * Where an order is in the fulfilment lifecycle — exactly one at a time.
@@ -206,4 +211,79 @@ export interface RestockEntry {
   ingredient: IngredientKey
   amount: number
   at: number
+}
+
+/* ----------------------------------------------------------- weddings */
+
+export interface WeddingPackage {
+  id: string
+  name: string
+  description: string
+  /** PLACEHOLDER base price, in pence. */
+  basePrice: number
+  includes: string[]
+}
+
+export interface QuoteTier {
+  variantId: string
+  quantity: number
+  label: string
+}
+
+export interface WeddingQuote {
+  id: string
+  version: number
+  packageId: string | null
+  basePrice: number
+  adjustments: { label: string; amount: number }[]
+  total: number
+  guestCount: number
+  note: string | null
+  createdAt: number
+  actorName: string | null
+  supersededAt: number | null
+  tiers: QuoteTier[]
+}
+
+export interface EquipmentLoan {
+  id: number
+  item: string
+  quantity: number
+  outAt: number | null
+  returned: boolean
+  returnedAt: number | null
+}
+
+export interface WeddingStageEvent {
+  stage: string
+  at: number
+  note?: string
+  actorName: string | null
+}
+
+export interface Wedding {
+  id: string
+  reference: string
+  stage: string
+  customer: Customer | null
+  /** The event day, as a shop-time moment. */
+  eventDate: Date
+  venue: string
+  guestCount: number
+  flavourNotes: string
+  dietaryRequirements: string
+  notes: string
+  staffRequired: number
+  driversRequired: number
+  /** Non-null once this wedding holds kitchen capacity. */
+  capacityBookedAt: number | null
+  currentQuote: WeddingQuote | null
+  /** Every version, newest first — the history of what was agreed. */
+  quotes: WeddingQuote[]
+  payment: PaymentSummary
+  loans: EquipmentLoan[]
+  stageHistory: WeddingStageEvent[]
+  /** Derived: deposit due under the current setting. */
+  depositDue: number
+  outstanding: number
 }

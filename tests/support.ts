@@ -106,6 +106,27 @@ export interface DashboardState {
       suppressedReason: string | null
     }[]
   }[]
+  weddings: {
+    id: string
+    reference: string
+    stage: string
+    customer: { name: string; email: string } | null
+    guestCount: number
+    staffRequired: number
+    driversRequired: number
+    capacityBookedAt: number | null
+    currentQuote: {
+      version: number
+      total: number
+      guestCount: number
+      tiers: { variantId: string; quantity: number }[]
+    } | null
+    quotes: { version: number; total: number; supersededAt: number | null }[]
+    payment: { total: number; paid: number; events: { actorName: string | null }[] }
+    loans: { id: number; item: string; returned: boolean; returnedAt: number | null }[]
+    depositDue: number
+    outstanding: number
+  }[]
   productionDemand: {
     day: string
     amounts: Record<string, number>

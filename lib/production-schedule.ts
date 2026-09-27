@@ -1,4 +1,6 @@
 
+import { holdsCapacity, type WeddingStage } from "@/lib/weddings"
+import type { ProjectableWedding } from "@/lib/stock-projection"
 import {
   addShopDays,
   compareShopDays,
@@ -111,7 +113,8 @@ export function collectionMomentFor(day: ShopDay, earliestCollectionTime: string
  */
 export function productionDayLoad(
   orders: Pick<Order, "collectionDate" | "productId" | "status">[],
-  variantsById: Record<string, Pick<ProductVariant, "leadTimeDays">>
+  variantsById: Record<string, Pick<ProductVariant, "leadTimeDays">>,
+  weddings: ProjectableWedding[] = []
 ): Map<string, number> {
   const load = new Map<string, number>()
   for (const order of orders) {
@@ -121,7 +124,51 @@ export function productionDayLoad(
     const key = dayKey(productionDate)
     load.set(key, (load.get(key) ?? 0) + 1)
   }
+  // A wedding is one job against the ceiling on each day it touches, not one
+  // per tier — the kitchen is setting up for one event. Its tiers still draw
+  // their full ingredient demand through the projection, which is why the
+  // ceiling alone understates the day; see weddingDayTierCount, which exists so
+  // the calendar can say so rather than letting "3 of 20" read as the whole
+  // picture.
+  for (const wedding of weddings) {
+    if (!holdsCapacity({ stage: wedding.stage as WeddingStage, capacityBookedAt: wedding.capacityBookedAt })) {
+      continue
+    }
+    const days = new Set<string>()
+    for (const tier of wedding.tiers) {
+      const variant = variantsById[tier.variantId]
+      if (!variant) continue
+      days.add(dayKey(productionDateFor(wedding.eventDate, variant.leadTimeDays)))
+    }
+    for (const day of days) load.set(day, (load.get(day) ?? 0) + 1)
+  }
   return load
+}
+
+/**
+ * How many wedding tiers land on each production day.
+ *
+ * The day ceiling counts a wedding as one job, which is right for setup but
+ * understates the baking: a five-tier wedding shows as "1" and is five cakes.
+ * The calendar shows this alongside so nobody reads the ceiling as the load.
+ */
+export function weddingDayTierCount(
+  weddings: ProjectableWedding[],
+  variantsById: Record<string, Pick<ProductVariant, "leadTimeDays">>
+): Map<string, number> {
+  const tiers = new Map<string, number>()
+  for (const wedding of weddings) {
+    if (!holdsCapacity({ stage: wedding.stage as WeddingStage, capacityBookedAt: wedding.capacityBookedAt })) {
+      continue
+    }
+    for (const tier of wedding.tiers) {
+      const variant = variantsById[tier.variantId]
+      if (!variant) continue
+      const key = dayKey(productionDateFor(wedding.eventDate, variant.leadTimeDays))
+      tiers.set(key, (tiers.get(key) ?? 0) + tier.quantity)
+    }
+  }
+  return tiers
 }
 
 /** Why a collection date cannot be chosen. `null` means it can. */

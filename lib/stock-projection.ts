@@ -1,5 +1,6 @@
 import { INGREDIENT_ORDER } from "@/lib/mock-data"
-import { dayKey, productionDateForOrder } from "@/lib/production-schedule"
+import { dayKey, productionDateFor, productionDateForOrder } from "@/lib/production-schedule"
+import { holdsCapacity, type WeddingStage } from "@/lib/weddings"
 import type {
   IngredientAmounts,
   IngredientKey,
@@ -118,6 +119,53 @@ export function productionLinesFrom(
     const productionDate = productionDateForOrder(order, variantsById)
     if (!productionDate) continue
     lines.push({ variantId: order.productId, units: order.quantity, productionDate })
+  }
+  return lines
+}
+
+/** A wedding's tiers, in the shape the projection needs. */
+export interface ProjectableWedding {
+  id: string
+  stage: string
+  capacityBookedAt: Date | null
+  eventDate: Date
+  tiers: { variantId: string; quantity: number }[]
+}
+
+/**
+ * Turns weddings into production lines — the same currency orders produce.
+ *
+ * This is the whole reason a wedding does not become an Order. The projection
+ * consumes ProductionLine, not orders, so a wedding can feed the existing
+ * calendar and stock forecast by producing lines directly. Downstream cannot
+ * tell the two apart, which is what "not a parallel system" has to mean.
+ *
+ * A wedding contributes only once it holds capacity — a stored fact, so that
+ * changing the capacity setting cannot retroactively free ingredients the
+ * kitchen has already promised.
+ *
+ * Each tier gets its own production date, because tiers are different recipes
+ * with different lead times. A three-tier wedding legitimately occupies three
+ * production days.
+ */
+export function productionLinesFromWeddings(
+  weddings: ProjectableWedding[],
+  variantsById: Record<string, Pick<ProductVariant, "leadTimeDays">>
+): ProductionLine[] {
+  const lines: ProductionLine[] = []
+  for (const wedding of weddings) {
+    if (!holdsCapacity({ stage: wedding.stage as WeddingStage, capacityBookedAt: wedding.capacityBookedAt })) {
+      continue
+    }
+    for (const tier of wedding.tiers) {
+      const variant = variantsById[tier.variantId]
+      if (!variant) continue
+      lines.push({
+        variantId: tier.variantId,
+        units: tier.quantity,
+        productionDate: productionDateFor(wedding.eventDate, variant.leadTimeDays),
+      })
+    }
   }
   return lines
 }
@@ -257,9 +305,28 @@ export function shortagesAfterAdding(
   variantsById: Record<string, BatchableVariant>,
   candidate: ProductionLine
 ): ShortageReason[] {
+  return shortagesAfterAddingAll(onHand, existingLines, variantsById, [candidate])
+}
+
+/**
+ * The same question for several lines arriving together.
+ *
+ * A wedding books all its tiers at once, and they must be judged as one
+ * addition: checking them one at a time would pass each against a projection
+ * that does not yet include the others, and let through a booking that is short
+ * only when taken as a whole. Batching makes this sharper still — two tiers of
+ * the same variant on one day may share a batch and cost less than the sum of
+ * checking them separately.
+ */
+export function shortagesAfterAddingAll(
+  onHand: StockRecord,
+  existingLines: ProductionLine[],
+  variantsById: Record<string, BatchableVariant>,
+  candidates: ProductionLine[]
+): ShortageReason[] {
   const projected = projectBalances(
     onHand,
-    demandByProductionDay([...existingLines, candidate], variantsById)
+    demandByProductionDay([...existingLines, ...candidates], variantsById)
   )
 
   const shortages: ShortageReason[] = []

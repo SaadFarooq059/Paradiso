@@ -16,6 +16,8 @@ import type {
   ProductVariant,
   RestockEntry,
   StaffMember,
+  Wedding,
+  WeddingPackage,
 } from "@/lib/types"
 
 /** Client-side view of the dashboard: identical to the old useState shape. */
@@ -30,6 +32,8 @@ export interface DashboardData {
   calendarSettings: CalendarSettings
   /** Forward projection: ingredient demand per production day, oldest first. */
   productionDemand: ProductionDayDemand[]
+  weddings: Wedding[]
+  weddingPackages: WeddingPackage[]
 }
 
 /** A production day's demand, with the date revived from the wire. */
@@ -48,6 +52,8 @@ const EMPTY: DashboardData = {
   // Only ever on screen for the moment before the first fetch lands.
   calendarSettings: INITIAL_CALENDAR_SETTINGS,
   productionDemand: [],
+  weddings: [],
+  weddingPackages: [],
 }
 
 function reviveOrder(order: SerializedOrder): Order {
@@ -59,6 +65,7 @@ function revive(state: DashboardState): DashboardData {
     ...state,
     orders: state.orders.map(reviveOrder),
     productionDemand: state.productionDemand.map((day) => ({ ...day, date: new Date(day.date) })),
+    weddings: state.weddings.map((wedding) => ({ ...wedding, eventDate: new Date(wedding.eventDate) })),
   }
 }
 

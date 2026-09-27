@@ -3,6 +3,7 @@ import type { $Enums } from "@prisma/client"
 import {
   demandByProductionDay,
   productionLinesFrom,
+  productionLinesFromWeddings,
   totalCommitted,
   type BatchableVariant,
   type StockRecord,
@@ -10,6 +11,7 @@ import {
 import { INITIAL_CALENDAR_SETTINGS } from "@/lib/mock-data"
 import { isStaffRole } from "@/lib/auth/roles"
 import { paymentStateOf } from "@/lib/payments"
+import { depositAmount, outstandingAmount } from "@/lib/weddings"
 import { TEMPLATE_FROM_DB } from "@/lib/server/email-service"
 
 /** Enum member to the label the app displays, same boundary as OrderStatus. */
@@ -26,19 +28,28 @@ import type {
   Order,
   ProductVariant,
   StaffMember,
+  Wedding,
 } from "@/lib/types"
 import {
   type DashboardState,
   parseConsumed,
   parseShortages,
   type SerializedOrder,
+  type SerializedWedding,
   toAppStatus,
 } from "@/lib/server/serialize"
 
 /** Any Prisma client or interactive-transaction client. */
 export type Db = Pick<
   typeof prisma,
-  "ingredient" | "productVariant" | "staff" | "order" | "restockEntry" | "calendarSettings"
+  | "ingredient"
+  | "productVariant"
+  | "staff"
+  | "order"
+  | "restockEntry"
+  | "calendarSettings"
+  | "wedding"
+  | "weddingPackage"
 >
 
 /**
@@ -57,6 +68,8 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
     shopName: row.shopName,
     shopAddress: row.shopAddress,
     shopPhone: row.shopPhone,
+    weddingCapacityStage: row.weddingCapacityStage as CalendarSettings["weddingCapacityStage"],
+    weddingDepositPercent: row.weddingDepositPercent,
   }
 }
 
@@ -67,7 +80,8 @@ export async function readCalendarSettings(db: Db = prisma): Promise<CalendarSet
  * they could never disagree; served piecemeal they could.
  */
 export async function loadDashboardState(db: Db = prisma): Promise<DashboardState> {
-  const [ingredients, variants, staff, orders, restocks, calendarSettings] = await Promise.all([
+  const [ingredients, variants, staff, orders, restocks, weddings, weddingPackages, calendarSettings] =
+    await Promise.all([
     db.ingredient.findMany({ orderBy: { sortOrder: "asc" }, include: { stockLevel: true } }),
     db.productVariant.findMany({
       where: { archived: false },
@@ -88,6 +102,20 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       },
     }),
     db.restockEntry.findMany({ orderBy: { at: "desc" }, include: { ingredient: true } }),
+    db.wedding.findMany({
+      orderBy: { eventDate: "asc" },
+      include: {
+        customer: true,
+        payments: { orderBy: { at: "asc" }, include: { actor: true } },
+        loans: { orderBy: { id: "asc" } },
+        stageHistory: { orderBy: { at: "asc" }, include: { actor: true } },
+        quotes: {
+          orderBy: { version: "desc" },
+          include: { tiers: true, actor: true },
+        },
+      },
+    }),
+    db.weddingPackage.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } }),
     readCalendarSettings(db),
   ])
 
@@ -180,6 +208,91 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
     } satisfies SerializedOrder
   })
 
+  const serializeQuote = (q: {
+    id: string; version: number; packageId: string | null; basePrice: number
+    adjustments: unknown; total: number; guestCount: number; note: string | null
+    createdAt: Date; supersededAt: Date | null
+    actor: { name: string } | null
+    tiers: { variantId: string; quantity: number; label: string }[]
+  }) => ({
+    id: q.id,
+    version: q.version,
+    packageId: q.packageId,
+    basePrice: q.basePrice,
+    adjustments: Array.isArray(q.adjustments)
+      ? (q.adjustments as { label: string; amount: number }[])
+      : [],
+    total: q.total,
+    guestCount: q.guestCount,
+    note: q.note,
+    createdAt: q.createdAt.getTime(),
+    actorName: q.actor?.name ?? null,
+    supersededAt: q.supersededAt?.getTime() ?? null,
+    tiers: q.tiers.map((t) => ({ variantId: t.variantId, quantity: t.quantity, label: t.label })),
+  })
+
+  const serializedWeddings: SerializedWedding[] = weddings.map((wedding) => {
+    const paid = wedding.payments.filter((p) => p.kind === "Payment").reduce((s, p) => s + p.amount, 0)
+    const refunded = wedding.payments.filter((p) => p.kind === "Refund").reduce((s, p) => s + p.amount, 0)
+    const current = wedding.quotes.find((q) => q.id === wedding.currentQuoteId) ?? null
+    const total = current?.total ?? 0
+    return {
+      id: wedding.id,
+      reference: wedding.reference,
+      stage: wedding.stage,
+      customer: wedding.customer
+        ? {
+            id: wedding.customer.id,
+            name: wedding.customer.name,
+            email: wedding.customer.email,
+            phone: wedding.customer.phone,
+          }
+        : null,
+      eventDate: wedding.eventDate.toISOString(),
+      venue: wedding.venue,
+      guestCount: wedding.guestCount,
+      flavourNotes: wedding.flavourNotes,
+      dietaryRequirements: wedding.dietaryRequirements,
+      notes: wedding.notes,
+      staffRequired: wedding.staffRequired,
+      driversRequired: wedding.driversRequired,
+      capacityBookedAt: wedding.capacityBookedAt?.getTime() ?? null,
+      currentQuote: current ? serializeQuote(current) : null,
+      quotes: wedding.quotes.map(serializeQuote),
+      payment: {
+        total,
+        paid,
+        refunded,
+        state: paymentStateOf(total, paid, refunded),
+        events: wedding.payments.map((e) => ({
+          id: e.id,
+          kind: e.kind as PaymentEventKind,
+          amount: e.amount,
+          at: e.at.getTime(),
+          actorId: e.actorId,
+          actorName: e.actor?.name ?? null,
+          note: e.note ?? undefined,
+        })),
+      },
+      loans: wedding.loans.map((l) => ({
+        id: l.id,
+        item: l.item,
+        quantity: l.quantity,
+        outAt: l.outAt?.getTime() ?? null,
+        returned: l.returned,
+        returnedAt: l.returnedAt?.getTime() ?? null,
+      })),
+      stageHistory: wedding.stageHistory.map((e) => ({
+        stage: e.stage,
+        at: e.at.getTime(),
+        note: e.note ?? undefined,
+        actorName: e.actor?.name ?? null,
+      })),
+      depositDue: depositAmount(total, calendarSettings.weddingDepositPercent),
+      outstanding: outstandingAmount(total, paid, refunded),
+    }
+  })
+
   // Demand per production day, derived from the live orders' frozen snapshots.
   // Everything the Stock Levels screen shows now comes from here rather than from
   // two stored columns: "committed" is what live orders still owe, and the
@@ -193,16 +306,35 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       { requires: variant.requires, unitsPerBatch: variant.unitsPerBatch },
     ])
   )
+  // Orders and weddings become the same currency here — ProductionLine — and
+  // the projection cannot tell them apart. This is what "weddings feed the
+  // existing calendar rather than a parallel system" actually means: one list,
+  // one batching pass, one forecast.
   const demand = demandByProductionDay(
-    productionLinesFrom(
-      serializedOrders.map((order) => ({
-        collectionDate: new Date(order.collectionDate),
-        productId: order.productId,
-        status: order.status,
-        quantity: order.quantity,
-      })),
-      variantLeadTimes
-    ),
+    [
+      ...productionLinesFrom(
+        serializedOrders.map((order) => ({
+          collectionDate: new Date(order.collectionDate),
+          productId: order.productId,
+          status: order.status,
+          quantity: order.quantity,
+        })),
+        variantLeadTimes
+      ),
+      ...productionLinesFromWeddings(
+        weddings.map((wedding) => ({
+          id: wedding.id,
+          stage: wedding.stage,
+          capacityBookedAt: wedding.capacityBookedAt,
+          eventDate: wedding.eventDate,
+          tiers:
+            wedding.quotes
+              .find((q) => q.id === wedding.currentQuoteId)
+              ?.tiers.map((t) => ({ variantId: t.variantId, quantity: t.quantity })) ?? [],
+        })),
+        variantLeadTimes
+      ),
+    ],
     batchable
   )
   const committed = totalCommitted(demand)
@@ -237,10 +369,23 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
       at: entry.at.getTime(),
     })),
     calendarSettings,
+    weddings: serializedWeddings,
+    weddingPackages: weddingPackages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      basePrice: p.basePrice,
+      includes: p.includes,
+    })),
   }
 }
 
 /** Re-hydrates a wire order back into the client-side Order shape. */
 export function reviveOrder(order: SerializedOrder): Order {
   return { ...order, collectionDate: new Date(order.collectionDate) }
+}
+
+/** Same, for a wedding: the event date comes over as an ISO string. */
+export function reviveWedding(wedding: SerializedWedding): Wedding {
+  return { ...wedding, eventDate: new Date(wedding.eventDate) }
 }

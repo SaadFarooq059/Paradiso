@@ -27,6 +27,7 @@ import { can, ROLE_LABEL, type Capability } from "@/lib/auth/roles"
 import { cn } from "@/lib/utils"
 
 export type DashboardView =
+  | "weddings"
   | "new-order"
   | "orders"
   | "calendar"
@@ -45,7 +46,6 @@ export type DashboardView =
 export type PreviewView =
   | "preview-logins"
   | "preview-storefront"
-  | "preview-weddings"
   | "preview-accounts"
 
 interface NavItem {
@@ -66,6 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "calendar", label: "Calendar", icon: CalendarRange, needs: "production:view" },
   { id: "recipes", label: "Recipes", icon: NotebookPen, needs: "recipes:manage" },
   { id: "restock", label: "Restock", icon: PackagePlus, needs: "stock:restock" },
+  { id: "weddings", label: "Weddings", icon: HeartHandshake, needs: "weddings:view" },
   { id: "stock", label: "Stock Levels", icon: PackageSearch, needs: "stock:view" },
   { id: "reports", label: "Reports & Analytics", icon: BarChart3, needs: "reports:view" },
   { id: "staff", label: "Staff Management", icon: UserCog, needs: "staff:manage" },
@@ -75,7 +76,6 @@ const NAV_ITEMS: NavItem[] = [
 const PREVIEW_NAV_ITEMS: NavItem[] = [
   { id: "preview-logins", label: "Staff Logins (preview)", icon: ShieldCheck },
   { id: "preview-storefront", label: "Customer Website (preview)", icon: Store },
-  { id: "preview-weddings", label: "Wedding Enquiries (preview)", icon: HeartHandshake },
   { id: "preview-accounts", label: "Accounts Sync (preview)", icon: Receipt },
 ]
 

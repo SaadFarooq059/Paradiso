@@ -1,0 +1,353 @@
+import { expect, test, type Page } from "@playwright/test"
+
+import {
+  committed,
+  readState,
+  resetDemoData,
+  signInAs,
+} from "./support"
+import { addShopDays, shopDayOf } from "@/lib/shop-time"
+
+/**
+ * The wedding pipeline, and the two decisions that are easy to get wrong.
+ *
+ * A wedding is not an Order. It books kitchen capacity directly through the same
+ * ProductionLine seam, so these tests assert on the shared stock projection —
+ * if a wedding's demand did not reach it, "feeds the existing calendar rather
+ * than a parallel system" would be a claim rather than a fact.
+ */
+
+/** Far enough out that no lead time makes it impossible. */
+function eventDay(): string {
+  return addShopDays(shopDayOf(new Date()), 60)
+}
+
+async function logEnquiry(page: Page, guestCount = 100, email = "wedding@example.com") {
+  const response = await page.request.post("/api/weddings", {
+    data: {
+      customerName: "Ada Fairweather",
+      customerEmail: email,
+      customerPhone: "07700 900123",
+      eventDay: eventDay(),
+      venue: "The Orangery",
+      guestCount,
+      flavourNotes: "Classic tiramisu",
+      dietaryRequirements: "One nut allergy",
+    },
+  })
+  return (await response.json()) as { weddingId?: string; message: string; tone: string }
+}
+
+async function weddingAction(
+  page: Page,
+  id: string,
+  action: string,
+  payload: Record<string, unknown> = {}
+) {
+  const response = await page.request.post(`/api/weddings/${id}`, { data: { action, ...payload } })
+  return {
+    status: response.status(),
+    body: (await response.json()) as {
+      message: string
+      tone: string
+      shortages?: { ingredient: string; shortBy: number }[]
+    },
+  }
+}
+
+async function quoteIt(page: Page, id: string, tiers: { variantId: string; quantity: number }[], guestCount = 100) {
+  return weddingAction(page, id, "quote", {
+    packageId: "celebration",
+    guestCount,
+    adjustments: [],
+    tiers,
+  })
+}
+
+async function findWedding(page: Page, id: string) {
+  const state = await readState(page)
+  return state.weddings.find((w) => w.id === id)!
+}
+
+test.beforeEach(async ({ page }) => {
+  await resetDemoData(page)
+  await signInAs(page, "Admin")
+})
+
+test.describe("a wedding is not an order", () => {
+  test("an enquiry holds no capacity and creates no order", async ({ page }) => {
+    const before = await readState(page)
+    const created = await logEnquiry(page)
+    expect(created.weddingId).toBeTruthy()
+
+    const after = await readState(page)
+    expect(after.orders).toHaveLength(before.orders.length)
+    expect(committed(after, "eggs")).toBe(0)
+
+    const wedding = await findWedding(page, created.weddingId!)
+    expect(wedding.stage).toBe("Enquiry")
+    expect(wedding.capacityBookedAt).toBeNull()
+    // The customer is the same Customer an order uses.
+    expect(wedding.customer?.email).toBe("wedding@example.com")
+  })
+
+  test("quoting moves it to Quoted and records a version", async ({ page }) => {
+    const created = await logEnquiry(page)
+    await quoteIt(page, created.weddingId!, [{ variantId: "suprema-classico", quantity: 2 }])
+
+    const wedding = await findWedding(page, created.weddingId!)
+    expect(wedding.stage).toBe("Quoted")
+    expect(wedding.currentQuote?.version).toBe(1)
+    // The Celebration package is seeded at £780.
+    expect(wedding.currentQuote?.total).toBe(78000)
+    expect(wedding.depositDue).toBe(19500) // 25% placeholder
+  })
+})
+
+test.describe("capacity is booked at the configured stage", () => {
+  test("nothing is held until the deposit, and then it is", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+
+    // Seeded setting is AtDeposit, so a quote alone holds nothing.
+    expect(committed(await readState(page), "eggs")).toBe(0)
+    expect((await findWedding(page, id)).capacityBookedAt).toBeNull()
+
+    await weddingAction(page, id, "stage", { stage: "DepositPaid" })
+
+    const wedding = await findWedding(page, id)
+    expect(wedding.capacityBookedAt).not.toBeNull()
+    // Two Supremas are one batch: six eggs, through the SAME projection orders use.
+    expect(committed(await readState(page), "eggs")).toBe(6)
+  })
+
+  test("the wedding's tiers reach the shared production calendar", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+    await weddingAction(page, id, "stage", { stage: "DepositPaid" })
+
+    const state = await readState(page)
+    // Suprema's lead time is 4 days, counted in shop days from the event.
+    const expected = addShopDays(eventDay(), -4)
+    expect(state.productionDemand.map((d) => d.day)).toContain(expected)
+  })
+
+  test("cancelling hands the ingredients back", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+    await weddingAction(page, id, "stage", { stage: "DepositPaid" })
+    expect(committed(await readState(page), "eggs")).toBe(6)
+
+    await weddingAction(page, id, "stage", { stage: "Cancelled" })
+
+    expect(committed(await readState(page), "eggs")).toBe(0)
+    expect((await findWedding(page, id)).capacityBookedAt).toBeNull()
+  })
+})
+
+test.describe("changing the capacity setting cannot strand demand", () => {
+  test("tightening leaves an already-booked wedding holding its capacity", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+    await weddingAction(page, id, "stage", { stage: "DepositPaid" })
+    const bookedAt = (await findWedding(page, id)).capacityBookedAt
+    expect(bookedAt).not.toBeNull()
+    expect(committed(await readState(page), "eggs")).toBe(6)
+
+    // Tighten: deposit -> final confirmation. This wedding is only at
+    // DepositPaid, so under the new rule it would NOT qualify.
+    const settings = await page.request.post("/api/settings", {
+      data: {
+        blockedWeekdays: [1],
+        earliestCollectionTime: "10:30",
+        maxOrdersPerProductionDay: 20,
+        shopName: "Paradiso",
+        shopAddress: "",
+        shopPhone: "",
+        weddingCapacityStage: "AtConfirmation",
+        weddingDepositPercent: 25,
+      },
+    })
+    expect(settings.ok()).toBeTruthy()
+
+    // The whole point: it keeps what it had. Freeing these ingredients would
+    // strand the demand and the shortage would only appear on the day.
+    const after = await findWedding(page, id)
+    expect(after.capacityBookedAt).toBe(bookedAt)
+    expect(committed(await readState(page), "eggs")).toBe(6)
+  })
+
+  test("loosening books a wedding that now qualifies", async ({ page }) => {
+    // Start at confirmation, so a quoted wedding holds nothing.
+    await page.request.post("/api/settings", {
+      data: {
+        blockedWeekdays: [1],
+        earliestCollectionTime: "10:30",
+        maxOrdersPerProductionDay: 20,
+        shopName: "Paradiso",
+        shopAddress: "",
+        shopPhone: "",
+        weddingCapacityStage: "AtConfirmation",
+        weddingDepositPercent: 25,
+      },
+    })
+
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+    expect((await findWedding(page, id)).capacityBookedAt).toBeNull()
+    expect(committed(await readState(page), "eggs")).toBe(0)
+
+    // Loosen to "at quote" — this wedding is Quoted, so it now qualifies.
+    await page.request.post("/api/settings", {
+      data: {
+        blockedWeekdays: [1],
+        earliestCollectionTime: "10:30",
+        maxOrdersPerProductionDay: 20,
+        shopName: "Paradiso",
+        shopAddress: "",
+        shopPhone: "",
+        weddingCapacityStage: "AtQuote",
+        weddingDepositPercent: 25,
+      },
+    })
+
+    expect((await findWedding(page, id)).capacityBookedAt).not.toBeNull()
+    expect(committed(await readState(page), "eggs")).toBe(6)
+  })
+})
+
+test.describe("amendments", () => {
+  test("a new version is created and the old one is superseded", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "mini-classico", quantity: 2 }], 100)
+
+    const first = await findWedding(page, id)
+    expect(first.currentQuote?.version).toBe(1)
+
+    await weddingAction(page, id, "quote", {
+      packageId: "celebration",
+      guestCount: 150,
+      adjustments: [{ label: "Extra tier", amount: 12000 }],
+      tiers: [{ variantId: "mini-classico", quantity: 3 }],
+    })
+
+    const after = await findWedding(page, id)
+    expect(after.currentQuote?.version).toBe(2)
+    expect(after.currentQuote?.guestCount).toBe(150)
+    // The agreed figure is not rewritten — v1 survives with its own total.
+    expect(after.quotes).toHaveLength(2)
+    const v1 = after.quotes.find((q) => q.version === 1)!
+    expect(v1.supersededAt).not.toBeNull()
+    expect(v1.total).toBe(78000)
+    expect(after.currentQuote?.total).toBe(90000)
+  })
+
+  test("an amendment that will not fit the kitchen is refused with the shortage", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "suprema-classico", quantity: 2 }])
+    await weddingAction(page, id, "stage", { stage: "DepositPaid" })
+    expect(committed(await readState(page), "eggs")).toBe(6)
+
+    // Twenty eggs on hand; each Suprema batch takes six and yields two.
+    const result = await weddingAction(page, id, "quote", {
+      packageId: "celebration",
+      guestCount: 400,
+      adjustments: [],
+      tiers: [{ variantId: "suprema-classico", quantity: 20 }],
+    })
+
+    expect(result.body.tone).toBe("error")
+    expect(result.body.shortages?.length).toBeGreaterThan(0)
+
+    // Refused, not partially applied: still on v1, still holding the old demand.
+    const after = await findWedding(page, id)
+    expect(after.currentQuote?.version).toBe(1)
+    expect(after.currentQuote?.tiers[0].quantity).toBe(2)
+    expect(committed(await readState(page), "eggs")).toBe(6)
+  })
+})
+
+test.describe("money reuses the order ledger", () => {
+  test("a deposit is recorded and moves the stage", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "mini-classico", quantity: 2 }])
+
+    const wedding = await findWedding(page, id)
+    expect(wedding.depositDue).toBe(19500)
+
+    await weddingAction(page, id, "pay", { amount: 19500 })
+
+    const paid = await findWedding(page, id)
+    expect(paid.payment.paid).toBe(19500)
+    expect(paid.outstanding).toBe(78000 - 19500)
+    expect(paid.payment.events[0].actorName).toBe("Aisha Bello")
+    // Paying the deposit is a pipeline event, and books capacity under the
+    // seeded setting.
+    expect(paid.stage).toBe("DepositPaid")
+    expect(paid.capacityBookedAt).not.toBeNull()
+  })
+
+  test("overpaying a wedding is refused", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+    await quoteIt(page, id, [{ variantId: "mini-classico", quantity: 2 }])
+    const result = await weddingAction(page, id, "pay", { amount: 78001 })
+    expect(result.body.tone).toBe("error")
+  })
+})
+
+test.describe("logistics", () => {
+  test("staff, drivers and loans are recorded and returnable", async ({ page }) => {
+    const created = await logEnquiry(page)
+    const id = created.weddingId!
+
+    await weddingAction(page, id, "logistics", { staffRequired: 2, driversRequired: 1 })
+    await weddingAction(page, id, "loan-out", { item: "Cake stand, 14-inch", quantity: 2 })
+
+    let wedding = await findWedding(page, id)
+    expect(wedding.staffRequired).toBe(2)
+    expect(wedding.driversRequired).toBe(1)
+    expect(wedding.loans).toHaveLength(1)
+    expect(wedding.loans[0].returned).toBe(false)
+
+    await weddingAction(page, id, "loan-return", { loanId: wedding.loans[0].id })
+
+    wedding = await findWedding(page, id)
+    expect(wedding.loans[0].returned).toBe(true)
+    expect(wedding.loans[0].returnedAt).not.toBeNull()
+  })
+})
+
+test.describe("roles", () => {
+  test("the kitchen can see weddings but not change them", async ({ page }) => {
+    const created = await logEnquiry(page)
+    await signInAs(page, "Kitchen")
+
+    const state = await readState(page)
+    expect(state.weddings.length).toBeGreaterThan(0)
+
+    const refused = await page.request.post(`/api/weddings/${created.weddingId}`, {
+      data: { action: "stage", stage: "Quoted" },
+    })
+    expect(refused.status()).toBe(403)
+
+    const cannotLog = await page.request.post("/api/weddings", {
+      data: {
+        customerName: "X",
+        customerEmail: "x@example.com",
+        eventDay: eventDay(),
+        venue: "Y",
+        guestCount: 10,
+      },
+    })
+    expect(cannotLog.status()).toBe(403)
+  })
+})

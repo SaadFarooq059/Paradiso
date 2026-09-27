@@ -73,6 +73,60 @@ export const INITIAL_STOCK: Record<IngredientKey, number> = {
   butter: 500,
 }
 
+/**
+ * PLACEHOLDER wedding packages.
+ *
+ * Plausible names, inclusions and prices, invented — the client has not sent
+ * theirs. Same standing as the batch yields and the product prices, and the
+ * Weddings screen labels them as placeholder so nobody quotes one.
+ */
+export const WEDDING_PACKAGES: {
+  id: string
+  name: string
+  description: string
+  basePrice: number
+  includes: string[]
+}[] = [
+  {
+    id: "classico-tier",
+    name: "Classico Tier",
+    description: "Two tiers of the Classico recipe, finished simply.",
+    basePrice: 45000,
+    includes: [
+      "Two tiers, serving up to 60",
+      "Cocoa-dusted finish",
+      "Delivery within Greater London",
+      "Cake stand on loan",
+    ],
+  },
+  {
+    id: "celebration",
+    name: "Celebration",
+    description: "Three tiers with a cutting cake and a tasting session.",
+    basePrice: 78000,
+    includes: [
+      "Three tiers, serving up to 120",
+      "Matching cutting cake",
+      "Tasting session for two",
+      "Delivery and on-site setup",
+      "Stands and trays on loan",
+    ],
+  },
+  {
+    id: "grand-affair",
+    name: "Grand Affair",
+    description: "Five tiers, bespoke finish, staffed setup on the day.",
+    basePrice: 145000,
+    includes: [
+      "Five tiers, serving up to 250",
+      "Bespoke decoration to your brief",
+      "Tasting session for four",
+      "Delivery, setup and a member of staff on site",
+      "Full stand and tray hire",
+    ],
+  },
+]
+
 export const INITIAL_STAFF: StaffMember[] = [
   { id: "aisha", name: "Aisha Bello", role: "Admin", orderCount: 0 },
   { id: "tom", name: "Tom Whitfield", role: "Manager", orderCount: 0 },
@@ -97,6 +151,11 @@ export const INITIAL_CALENDAR_SETTINGS: CalendarSettings = {
   shopName: "Paradiso",
   shopAddress: "42 Bermondsey Street, London SE1 3XF",
   shopPhone: "020 7946 0112",
+  // Seeded at deposit — money has changed hands, so the booking is real enough
+  // to plan around. The client will have a view; this is where they change it.
+  weddingCapacityStage: "AtDeposit",
+  // PLACEHOLDER, same standing as the prices and batch yields.
+  weddingDepositPercent: 25,
 }
 
 // Staff are now managed at runtime (added/removed/renamed via Staff Management), so

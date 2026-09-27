@@ -5,6 +5,7 @@ import { addDays, addMonths, isSameDay, startOfDay, startOfMonth, startOfWeek } 
 import {
   CalendarDays,
   CalendarRange,
+  HeartHandshake,
   ChefHat,
   ChevronLeft,
   ChevronRight,
@@ -30,10 +31,10 @@ import {
   STATUS_BADGE_CLASS,
 } from "@/lib/mock-data"
 import { formatDateLong, formatDateShort } from "@/lib/format-date"
-import { dayKey } from "@/lib/production-schedule"
+import { dayKey, productionDateFor } from "@/lib/production-schedule"
 import { calendarDocument } from "@/lib/export/documents"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
-import type { Order, OrderStatus, ProductVariant, StaffMember } from "@/lib/types"
+import type { Order, OrderStatus, ProductVariant, StaffMember, Wedding } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /**
@@ -60,6 +61,8 @@ interface ProductionCalendarPanelProps {
   staff: StaffMember[]
   /** Forward projection: what each production day needs, oldest first. */
   productionDemand: ProductionDayDemand[]
+  /** Weddings holding capacity — they bake on these days too. */
+  weddings: Wedding[]
   /** What is physically in the building, for the running balance. */
   onHand: Record<string, number>
   /** Focused day. Controlled by the dashboard so Order Detail can jump here. */
@@ -82,6 +85,7 @@ export function ProductionCalendarPanel({
   variantsById,
   staff,
   productionDemand,
+  weddings,
   onHand,
   selectedDate,
   onSelectDate,
@@ -218,6 +222,7 @@ export function ProductionCalendarPanel({
           visibleOrders={visibleOrders}
           variantsById={variantsById}
           productionDemand={productionDemand}
+          weddings={weddings}
           onHand={onHand}
           onSelectOrder={onSelectOrder}
           onScheduleForDate={onScheduleForDate}
@@ -747,6 +752,7 @@ function DayView({
   visibleOrders,
   variantsById,
   productionDemand,
+  weddings,
   onHand,
   onSelectOrder,
   onScheduleForDate,
@@ -756,12 +762,34 @@ function DayView({
   visibleOrders: Order[]
   variantsById: Record<string, ProductVariant>
   productionDemand: ProductionDayDemand[]
+  weddings: Wedding[]
   onHand: Record<string, number>
   onSelectOrder: (id: string) => void
   onScheduleForDate: (date: Date) => void
 }) {
   const key = dayKey(selectedDate)
   const demand = productionDemand.find((day) => day.day === key)
+
+  // Which weddings are baking today, and how many cakes that actually is.
+  //
+  // A wedding counts as ONE against maxOrdersPerProductionDay — it is one event
+  // to set up for — but it can be five tiers in the oven. Saying so here is the
+  // difference between "3 of 20" being a useful number and a misleading one.
+  const weddingsToday = weddings
+    .filter((wedding) => wedding.capacityBookedAt)
+    .map((wedding) => {
+      const tiers = (wedding.currentQuote?.tiers ?? []).filter((tier) => {
+        const variant = variantsById[tier.variantId]
+        return variant && dayKey(productionDateFor(wedding.eventDate, variant.leadTimeDays)) === key
+      })
+      return { wedding, tiers }
+    })
+    .filter((entry) => entry.tiers.length > 0)
+
+  const weddingCakes = weddingsToday.reduce(
+    (sum, entry) => sum + entry.tiers.reduce((t, tier) => t + tier.quantity, 0),
+    0
+  )
 
   const collections = orders
     .filter((order) => isSameDay(order.collectionDate, selectedDate))
@@ -827,6 +855,37 @@ function DayView({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {weddingsToday.length > 0 && (
+            // Stated explicitly because the day ceiling does not say it. A
+            // wedding is one job against "N of 20" and can be five cakes in the
+            // oven; reading the ceiling as the kitchen's load would understate
+            // exactly the days that are busiest.
+            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <HeartHandshake className="size-4 shrink-0 text-primary" />
+                {weddingsToday.length} wedding{weddingsToday.length === 1 ? "" : "s"} baking today ·{" "}
+                {weddingCakes} cake{weddingCakes === 1 ? "" : "s"}
+              </span>
+              <ul className="flex flex-col gap-1">
+                {weddingsToday.map(({ wedding, tiers }) => (
+                  <li key={wedding.id} className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                    <span className="text-foreground">
+                      {wedding.reference} · {wedding.customer?.name ?? "Unknown"}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {tiers.length} tier{tiers.length === 1 ? "" : "s"} ·{" "}
+                      {tiers.reduce((t, tier) => t + tier.quantity, 0)} cakes
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <span className="text-xs text-muted-foreground">
+                Each wedding counts as one order against the day&apos;s ceiling, so that figure
+                understates the baking on days like this.
+              </span>
+            </div>
+          )}
+
           {!demand ? (
             <Empty>
               <EmptyTitle>Nothing in production this day</EmptyTitle>

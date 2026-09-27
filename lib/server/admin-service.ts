@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
+import { applyCapacityStageChange } from "@/lib/server/wedding-service"
 import { hashPassword } from "@/lib/server/session"
-import { loadDashboardState } from "@/lib/server/state"
+import { loadDashboardState, readCalendarSettings } from "@/lib/server/state"
 import type { MutationResult } from "@/lib/server/order-service"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
 
@@ -191,7 +192,8 @@ export async function resetDemoData(): Promise<MutationResult> {
  * would make dates unbookable.
  */
 export async function saveCalendarSettings(
-  settings: CalendarSettings
+  settings: CalendarSettings,
+  actor: StaffMember | null = null
 ): Promise<MutationResult> {
   const blockedWeekdays = [...new Set(settings.blockedWeekdays)]
     .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
@@ -233,6 +235,14 @@ export async function saveCalendarSettings(
     }
   }
 
+  if (settings.weddingDepositPercent < 0 || settings.weddingDepositPercent > 100) {
+    return {
+      state: await loadDashboardState(),
+      message: "The deposit percentage has to be between 0 and 100.",
+      tone: "error",
+    }
+  }
+
   const shopFields = {
     blockedWeekdays,
     earliestCollectionTime: settings.earliestCollectionTime,
@@ -240,7 +250,11 @@ export async function saveCalendarSettings(
     shopName,
     shopAddress: settings.shopAddress.trim(),
     shopPhone: settings.shopPhone.trim(),
+    weddingCapacityStage: settings.weddingCapacityStage,
+    weddingDepositPercent: settings.weddingDepositPercent,
   }
+
+  const before = await readCalendarSettings()
 
   await prisma.calendarSettings.upsert({
     where: { id: 1 },
@@ -248,5 +262,31 @@ export async function saveCalendarSettings(
     update: shopFields,
   })
 
-  return { state: await loadDashboardState(), message: "Settings saved", tone: "success" }
+  // Changing when weddings book capacity has to be applied to the ones that
+  // already exist, or the setting is a lie for everything booked before it.
+  // Tightening never un-books; loosening books what fits and reports what does
+  // not, so the change is never half-applied in silence.
+  let capacityNote = ""
+  if (before.weddingCapacityStage !== settings.weddingCapacityStage) {
+    const { booked, refused } = await applyCapacityStageChange(settings.weddingCapacityStage, actor)
+    const parts: string[] = []
+    if (booked.length) parts.push(`${booked.length} wedding${booked.length === 1 ? "" : "s"} now holding capacity`)
+    if (refused.length) {
+      parts.push(
+        `${refused.length} could not be booked (${refused.map((r) => r.reference).join(", ")}) — not enough stock`
+      )
+    }
+    // Weddings booked before the change keep their capacity whatever the new
+    // setting says; that is what stops demand being stranded.
+    if (parts.length) capacityNote = ` — ${parts.join("; ")}`
+    if (refused.length) {
+      return {
+        state: await loadDashboardState(),
+        message: `Settings saved${capacityNote}`,
+        tone: "warning",
+      }
+    }
+  }
+
+  return { state: await loadDashboardState(), message: `Settings saved${capacityNote}`, tone: "success" }
 }
