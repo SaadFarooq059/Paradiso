@@ -155,3 +155,48 @@ export const ORDER_ACTION_CAPABILITY: Record<string, Capability> = {
   refund: "payments:refund",
   "cancel-and-refund": "payments:refund",
 }
+
+/**
+ * Which capability each dashboard screen needs.
+ *
+ * Shared by the sidebar (to hide what a role cannot use) and by the dashboard
+ * itself (to decide where a role lands, and to move it off a screen it has no
+ * business on). Keeping one map stops the two disagreeing — which they did:
+ * Kitchen opened on New Order, a screen its own sidebar was hiding.
+ */
+export const VIEW_CAPABILITY: Record<string, Capability | undefined> = {
+  "new-order": "orders:create",
+  orders: undefined,
+  calendar: "production:view",
+  recipes: "recipes:manage",
+  restock: "stock:restock",
+  stock: "stock:view",
+  reports: "reports:view",
+  staff: "staff:manage",
+  "calendar-rules": "settings:manage",
+}
+
+/** The order a role is offered screens in; the first it can use is where it lands. */
+const VIEW_ORDER = [
+  "new-order",
+  "orders",
+  "calendar",
+  "stock",
+  "reports",
+  "recipes",
+  "restock",
+  "staff",
+  "calendar-rules",
+]
+
+export function canUseView(role: StaffRole, view: string): boolean {
+  const needed = VIEW_CAPABILITY[view]
+  // A screen with no capability listed — the preview mockups — is open to all.
+  if (!(view in VIEW_CAPABILITY)) return true
+  return !needed || can(role, needed)
+}
+
+/** Where this role should start. Never a screen it cannot use. */
+export function landingViewFor(role: StaffRole): string {
+  return VIEW_ORDER.find((view) => canUseView(role, view)) ?? "orders"
+}

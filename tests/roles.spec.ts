@@ -1,6 +1,13 @@
 import { expect, test, type APIResponse } from "@playwright/test"
 
-import { can, ROLE_LABEL, STAFF_ROLES, type Capability, type StaffRole } from "@/lib/auth/roles"
+import {
+  can,
+  canUseView,
+  landingViewFor,
+  ROLE_LABEL,
+  STAFF_ROLES,
+  type Capability,
+} from "@/lib/auth/roles"
 import {
   collectionDate,
   confirmOrder,
@@ -240,6 +247,22 @@ test.describe("roles are not merely served a hidden screen", () => {
     expect(can("ShopFloor", "customers:view")).toBe(true)
     expect(can("ShopFloor", "reports:view")).toBe(false)
     expect(can("ShopFloor", "recipes:manage")).toBe(false)
+  })
+})
+
+test.describe("a role lands somewhere it can actually use", () => {
+  // Kitchen opened on New Order — hidden in its own sidebar and refused by the
+  // API, so not a hole, but a role should not start on a dead end.
+  for (const role of STAFF_ROLES) {
+    test(`${ROLE_LABEL[role]} starts on a screen it holds the capability for`, ({}) => {
+      const landing = landingViewFor(role)
+      expect(canUseView(role, landing), `${role} landed on ${landing}`).toBe(true)
+    })
+  }
+
+  test("Kitchen specifically does not land on New Order", () => {
+    expect(canUseView("Kitchen", "new-order")).toBe(false)
+    expect(landingViewFor("Kitchen")).not.toBe("new-order")
   })
 })
 

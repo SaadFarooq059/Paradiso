@@ -22,9 +22,9 @@ import { StaffManagementPanel } from "@/components/dashboard/staff-management-pa
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { useDashboardData } from "@/components/dashboard/use-dashboard-data"
 import type { CalendarSettings, IngredientKey, ProductVariant, StaffMember } from "@/lib/types"
+import { can, canUseView, landingViewFor } from "@/lib/auth/roles"
 import { shopDayOf } from "@/lib/shop-time"
 
-const ADMIN_ONLY_VIEWS: DashboardView[] = ["recipes", "restock", "staff", "calendar-rules"]
 
 const VIEW_META: Record<DashboardView, { title: string; description: string }> = {
   "new-order": {
@@ -85,7 +85,7 @@ export function CrmDashboard() {
   const router = useRouter()
   const { currentUser, isLoading: isAuthLoading, signOut } = useAuth()
   const { data, variantsById, isLoading: isDataLoading, mutate } = useDashboardData()
-  const [view, setView] = useState<DashboardView>("new-order")
+  const [view, setView] = useState<DashboardView | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   // Which day the Production Calendar is focused on. Lives here rather than inside
   // the panel so Order Detail can jump the calendar to an order's collection date,
@@ -100,19 +100,26 @@ export function CrmDashboard() {
     data
   const holdCount = useMemo(() => orders.filter((order) => order.status === "On Hold").length, [orders])
   const selectedOrder = selectedOrderId ? orders.find((order) => order.id === selectedOrderId) ?? null : null
-  const isAdmin = currentUser?.role === "Admin"
+
+  /**
+   * Land on a screen this role can actually use, and leave one it cannot.
+   *
+   * Kitchen opened on New Order — hidden in its own sidebar, and refused by the
+   * API if submitted. Not a hole, but a role should not start on a dead end.
+   * Also covers a role changing under an open session.
+   */
+  useEffect(() => {
+    if (!currentUser) return
+    if (view === null || !canUseView(currentUser.role, view)) {
+      setView(landingViewFor(currentUser.role) as DashboardView)
+    }
+  }, [currentUser, view])
 
   useEffect(() => {
     if (!isAuthLoading && !currentUser) {
       router.replace("/sign-in")
     }
   }, [isAuthLoading, currentUser, router])
-
-  useEffect(() => {
-    if (currentUser && !isAdmin && ADMIN_ONLY_VIEWS.includes(view)) {
-      setView("new-order")
-    }
-  }, [currentUser, isAdmin, view])
 
   function handleViewChange(nextView: DashboardView) {
     setSelectedOrderId(null)
@@ -213,7 +220,7 @@ export function CrmDashboard() {
     void mutate(`/api/staff/${id}`, { method: "DELETE" })
   }
 
-  if (isAuthLoading || isDataLoading || !currentUser) {
+  if (isAuthLoading || isDataLoading || !currentUser || view === null) {
     return <div className="h-dvh w-full bg-background" />
   }
 
@@ -306,10 +313,10 @@ export function CrmDashboard() {
                   onViewProduction={() => handleViewChange("calendar")}
                 />
               )}
-              {view === "calendar-rules" && isAdmin && (
+              {view === "calendar-rules" && can(currentUser.role, "settings:manage") && (
                 <CalendarRulesPanel settings={calendarSettings} onSave={handleSaveCalendarSettings} />
               )}
-              {view === "staff" && isAdmin && (
+              {view === "staff" && can(currentUser.role, "staff:manage") && (
                 <StaffManagementPanel
                   staff={staff}
                   currentUserId={currentUser.id}
