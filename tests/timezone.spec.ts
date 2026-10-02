@@ -26,7 +26,7 @@ import { addShopDays, shopDayOf, shopMoment } from "@/lib/shop-time"
  * production. Every assertion below fails against the old code.
  */
 
-/** Far enough out to clear Suprema's four-day lead time, and never a Monday. */
+/** Far enough out to clear any lead time, and never a Monday. */
 function chosenDay(): string {
   const day = addShopDays(shopDayOf(new Date()), 12)
   // 1 = Monday, which the shop does not do collections on.
@@ -37,9 +37,8 @@ function chosenDay(): string {
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInViaApi(page)
-  // The larger sizes carry estimated prices, which the client may yet correct.
-  // These specs assert exact money, so they pin the two they use rather than
-  // depending on an estimate that is expected to move.
+  // These specs assert exact money, so they pin the two prices they use rather
+  // than depending on reference data the client may yet change.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })
@@ -64,8 +63,8 @@ test.describe("the shop's calendar does not depend on anyone's clock", () => {
     await orderAction(page, created.orderId!, "schedule")
 
     const state = await readState(page)
-    // Suprema's lead time is four days, counted in shop days.
-    const expected = addShopDays(day, -4)
+    // Suprema's lead time is two days, counted in shop days.
+    const expected = addShopDays(day, -2)
     const produced = state.productionDemand.map((d) => d.day)
     expect(produced).toContain(expected)
   })

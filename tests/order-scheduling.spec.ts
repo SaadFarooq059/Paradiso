@@ -4,7 +4,7 @@ import { DEV_ACCOUNTS } from "@/lib/auth/dev-accounts"
 import { collectionDate, dayAttribute, priceVariant, resetDemoData } from "./support"
 
 function eggsCard(page: Page) {
-  return page.locator("div", { hasText: "Eggs" }).filter({ has: page.getByText("available") }).last()
+  return page.getByRole("listitem").filter({ hasText: /^Eggs/ })
 }
 
 /** Signs in through the form itself, as an Admin, who can do every step below. */
@@ -74,8 +74,8 @@ async function submitOrder(page: Page, productName: string, quantity: number) {
 test("order sequence: stock deduction, round-robin staff, and on-hold shortage", async ({ page }) => {
   await resetDemoData(page)
   await signIn(page)
-  // Both larger sizes carry estimated prices. This spec asserts exact stock
-  // arithmetic, so it pins them rather than depending on an estimate.
+  // This spec asserts exact stock arithmetic, so it pins both prices rather
+  // than depending on reference data the client may yet change.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 

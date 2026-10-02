@@ -27,9 +27,8 @@ const SUPREMA = "suprema-classico"
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInViaApi(page)
-  // The larger sizes carry estimated prices, which the client may yet correct.
-  // These specs assert exact money, so they pin the two they use rather than
-  // depending on an estimate that is expected to move.
+  // These specs assert exact money, so they pin the two prices they use rather
+  // than depending on reference data the client may yet change.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })
@@ -175,8 +174,8 @@ test.describe("stock is NOT moved by a refund", () => {
 
 test.describe("an unpriced product cannot be sold", () => {
   test("every seeded product has a price", async ({ page }) => {
-    // The larger sizes are estimated rather than unpriced, so the whole range
-    // can be ordered. An unpriced one would be a regression, not a placeholder.
+    // Vegan and gluten-free are estimated rather than unpriced, so the whole
+    // range can be ordered. An unpriced one would be a regression, not a placeholder.
     const state = await readState(page)
     expect(state.variants.filter((v) => v.priceAmount === 0)).toHaveLength(0)
     expect(state.variants.filter((v) => v.priceEstimated).length).toBeGreaterThan(0)
@@ -211,7 +210,7 @@ test.describe("an unpriced product cannot be sold", () => {
   test("an estimated price is still an estimate after an unrelated edit", async ({ page }) => {
     // The flag must survive a save that does not touch the price, or the marker
     // quietly disappears the first time someone fixes a typo in the name.
-    const before = (await readState(page)).variants.find((v) => v.id === "suprema-classico")!
+    const before = (await readState(page)).variants.find((v) => v.id === "suprema-vegan-classico")!
     expect(before.priceEstimated).toBe(true)
 
     const response = await page.request.post("/api/variants", {
@@ -219,7 +218,7 @@ test.describe("an unpriced product cannot be sold", () => {
     })
     expect(response.ok()).toBeTruthy()
 
-    const after = (await readState(page)).variants.find((v) => v.id === "suprema-classico")!
+    const after = (await readState(page)).variants.find((v) => v.id === "suprema-vegan-classico")!
     expect(after.priceEstimated).toBe(true)
     expect(after.priceAmount).toBe(before.priceAmount)
   })
@@ -227,7 +226,7 @@ test.describe("an unpriced product cannot be sold", () => {
 
 test.describe("the payment ledger", () => {
   test("totals derive from the variant price and the ledger, in pence", async ({ page }) => {
-    // Suprema has no published price, so these specs set £45.00; two is £90.00.
+    // These specs pin Suprema at £45.00; two is £90.00.
     const order = await placeOrder(page, SUPREMA, 2)
     const id = order.orderId!
 

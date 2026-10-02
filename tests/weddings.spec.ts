@@ -74,9 +74,8 @@ async function findWedding(page: Page, id: string) {
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   await signInAs(page, "Admin")
-  // The larger sizes carry estimated prices, which the client may yet correct.
-  // These specs assert exact money, so they pin the two they use rather than
-  // depending on an estimate that is expected to move.
+  // These specs assert exact money, so they pin the two prices they use rather
+  // than depending on reference data the client may yet change.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })
@@ -136,8 +135,8 @@ test.describe("capacity is booked at the configured stage", () => {
     await weddingAction(page, id, "stage", { stage: "DepositPaid" })
 
     const state = await readState(page)
-    // Suprema's lead time is 4 days, counted in shop days from the event.
-    const expected = addShopDays(eventDay(), -4)
+    // Suprema's lead time is 2 days, counted in shop days from the event.
+    const expected = addShopDays(eventDay(), -2)
     expect(state.productionDemand.map((d) => d.day)).toContain(expected)
   })
 

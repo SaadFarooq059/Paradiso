@@ -31,41 +31,39 @@ export const INGREDIENT_ORDER: IngredientKey[] = [
 /**
  * The client's real range: three sizes across six flavours.
  *
- * Only the Mini-misu prices are published. The two larger sizes are ESTIMATED
- * from them and carry `priceEstimated`, which every screen showing a price turns
- * into a visible "estimated, pending confirmation" — the same standing as the
- * batch yields. They are real enough to order against, and marked clearly enough
- * that the client corrects them rather than trusting them.
+ * Prices are the client's own published figures for Classico and the three
+ * flavoured variants, at all three sizes. They are NOT a formula: the real range
+ * does not scale with servings (£3.75 a serving at Mini, £3.33 at Grande, £1.82
+ * at Suprema), so the numbers are simply listed.
  *
- * One rule produces all eighteen, and it reproduces every published figure
- * exactly rather than inventing a curve:
+ * The one pattern the client's figures do confirm is a flat £3.00 premium for a
+ * non-Classico flavour, at every size: 15/18, 30/33, 40/43.
  *
- *   price = servings x PER_SERVING + flavour premium
- *
- * At Mini that is 4 x £3.75 = £15.00 Classico, +£3.00 for the flavoured three
- * (£18.00), +£15.00 for vegan and gluten-free (£30.00) — the client's own three
- * numbers. The premiums stay flat across sizes because they are substitution
- * costs, not size costs; scaling them would put a vegan Suprema above the
- * 40-serving wedding tray.
+ * Vegan and gluten-free are still ESTIMATED and carry `priceEstimated`, which
+ * every screen showing a price turns into a visible "estimated, pending
+ * confirmation". We have no figure for them at all — the £30 previously taken
+ * for a flat vegan price turned out to be the Grande Classico price — so they
+ * are priced at the same £3.00 premium the client charges for any other
+ * non-Classico flavour. That is the only premium there is evidence for; it is a
+ * placeholder, not a quote.
  *
  * Coffee appears in Classico and nothing else, which is the shop's own rule.
  * Vegan and GF Classico are Classico, so they keep it.
  *
- * Still placeholder, and labelled as such in the UI: unitsPerBatch (the client
- * has not told us what a batch yields) and Suprema's four-day lead time — the
- * site says two days for everything, so which products genuinely need four is
- * an open question.
+ * Still placeholder, and labelled as such in the UI: unitsPerBatch — the client
+ * has not told us what a batch yields.
+ *
+ * Lead times are two days for everything. The client has said the four-day
+ * product is Number-misu, which is not in this range yet; Suprema's four days
+ * were our own guess and are gone.
  */
-/** Pence per serving, derived from the published £15.00 Mini-misu Classico. */
-const PER_SERVING = 375
-/** Flat premiums, as published at Mini size. */
+/** The flat premium for any non-Classico flavour, at every size. */
 const FLAVOUR_PREMIUM = 300
-const FREE_FROM_PREMIUM = 1500
-/** Servings each size is sold as; Suprema is the midpoint of "~20-25". */
-const SERVINGS = { mini: 4, grande: 9, suprema: 22 } as const
+/** Published Classico prices, in pence, by size. */
+const CLASSICO = { mini: 1500, grande: 3000, suprema: 4000 } as const
 
-function priceFor(size: keyof typeof SERVINGS, premium = 0) {
-  return SERVINGS[size] * PER_SERVING + premium
+function priceFor(size: keyof typeof CLASSICO, premium = 0) {
+  return CLASSICO[size] + premium
 }
 
 export const PRODUCT_VARIANTS: ProductVariant[] = [
@@ -117,7 +115,8 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
     leadTimeDays: 2,
     unitsPerBatch: 8,
-    priceAmount: priceFor("mini", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("mini", FLAVOUR_PREMIUM),
+    priceEstimated: true,
   },
   {
     id: "mini-gf-classico",
@@ -127,7 +126,8 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     requires: { eggs: 2, mascarpone: 150, savoiardi: 100, coffee: 50 },
     leadTimeDays: 2,
     unitsPerBatch: 8,
-    priceAmount: priceFor("mini", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("mini", FLAVOUR_PREMIUM),
+    priceEstimated: true,
   },
   {
     id: "grande-classico",
@@ -138,7 +138,6 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     leadTimeDays: 2,
     unitsPerBatch: 4,
     priceAmount: priceFor("grande"),
-    priceEstimated: true,
   },
   {
     id: "grande-biscoff",
@@ -149,7 +148,6 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     leadTimeDays: 2,
     unitsPerBatch: 4,
     priceAmount: priceFor("grande", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "grande-pistacchio-nutella",
@@ -160,7 +158,6 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     leadTimeDays: 2,
     unitsPerBatch: 4,
     priceAmount: priceFor("grande", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "grande-oreo-white-chocolate",
@@ -171,7 +168,6 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     leadTimeDays: 2,
     unitsPerBatch: 4,
     priceAmount: priceFor("grande", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "grande-vegan-classico",
@@ -181,7 +177,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
     leadTimeDays: 2,
     unitsPerBatch: 4,
-    priceAmount: priceFor("grande", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("grande", FLAVOUR_PREMIUM),
     priceEstimated: true,
   },
   {
@@ -192,7 +188,7 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     requires: { eggs: 4, mascarpone: 300, savoiardi: 200, coffee: 100 },
     leadTimeDays: 2,
     unitsPerBatch: 4,
-    priceAmount: priceFor("grande", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("grande", FLAVOUR_PREMIUM),
     priceEstimated: true,
   },
   {
@@ -201,10 +197,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. Coffee-soaked savoiardi, mascarpone cream, dusted with cocoa.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
     priceAmount: priceFor("suprema"),
-    priceEstimated: true,
   },
   {
     id: "suprema-biscoff",
@@ -212,10 +207,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. Biscoff biscuit and caramelised spread, no coffee.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
     priceAmount: priceFor("suprema", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "suprema-pistacchio-nutella",
@@ -223,10 +217,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. Pistachio cream layered with Nutella, no coffee.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
     priceAmount: priceFor("suprema", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "suprema-oreo-white-chocolate",
@@ -234,10 +227,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. Crushed Oreo and white chocolate, no coffee.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
     priceAmount: priceFor("suprema", FLAVOUR_PREMIUM),
-    priceEstimated: true,
   },
   {
     id: "suprema-vegan-classico",
@@ -245,9 +237,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. The Classico, made without dairy or egg.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
-    priceAmount: priceFor("suprema", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("suprema", FLAVOUR_PREMIUM),
     priceEstimated: true,
   },
   {
@@ -256,9 +248,9 @@ export const PRODUCT_VARIANTS: ProductVariant[] = [
     description: "12″. The Classico, made with gluten-free savoiardi.",
     servings: "Serves ~20–25",
     requires: { eggs: 10, mascarpone: 750, savoiardi: 500, coffee: 250, butter: 100 },
-    leadTimeDays: 4,
+    leadTimeDays: 2,
     unitsPerBatch: 2,
-    priceAmount: priceFor("suprema", FREE_FROM_PREMIUM),
+    priceAmount: priceFor("suprema", FLAVOUR_PREMIUM),
     priceEstimated: true,
   },
 ]
