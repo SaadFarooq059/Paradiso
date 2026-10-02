@@ -88,7 +88,7 @@ export function StaffManagementPanel({ staff, currentUserId, onSave, onDelete }:
       )}
 
       {editing && (
-        <Card className="mx-auto w-full max-w-2xl">
+        <Card className="w-full">
           <CardHeader>
             <CardTitle>{editing.id ? "Edit staff member" : "New staff member"}</CardTitle>
             <CardDescription>

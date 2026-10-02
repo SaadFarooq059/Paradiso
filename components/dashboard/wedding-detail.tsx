@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Banknote, Check, HeartHandshake, PackageCheck, Plus, Truck, Undo2, Users } from "lucide-react"
+import { Banknote, Check, CircleX, PackageCheck, Plus, Truck, Undo2, Users } from "lucide-react"
 
+import { DateTile, STAGE_CLASS, WEEKDAY, countdown, daysUntil } from "@/components/dashboard/wedding-visuals"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -56,24 +57,30 @@ export function WeddingDetail({
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <HeartHandshake className="size-5" />
-                </div>
-                <div>
-                  <CardTitle>{wedding.customer?.name ?? "Unknown customer"}</CardTitle>
-                  <CardDescription>
-                    {wedding.reference} · {formatDateLong(wedding.eventDate)}
+              <div className="flex items-center gap-4">
+                <DateTile date={new Date(wedding.eventDate)} />
+                <div className="flex flex-col gap-1">
+                  <CardTitle className="text-lg">{wedding.customer?.name ?? "Unknown customer"}</CardTitle>
+                  <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <span>
+                      {WEEKDAY.format(new Date(wedding.eventDate))} {formatDateLong(wedding.eventDate)}
+                    </span>
+                    {!isDead && (
+                      <span className="font-medium text-foreground">{countdown(daysUntil(new Date(wedding.eventDate)))}</span>
+                    )}
+                    <span className="font-mono text-xs">{wedding.reference}</span>
                   </CardDescription>
                 </div>
               </div>
-              <Badge variant="outline">
+              <Badge variant="outline" className={cn("shrink-0", STAGE_CLASS[wedding.stage])}>
                 {WEDDING_STAGE_LABEL[wedding.stage as WeddingStage] ?? wedding.stage}
               </Badge>
             </div>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-4 text-sm">
+            <StageStepper stage={wedding.stage as WeddingStage} />
+
             <dl className="grid gap-3 @sm:grid-cols-2 @3xl:grid-cols-4">
               <Detail label="Venue" value={wedding.venue || "—"} />
               <Detail label="Guests" value={String(wedding.guestCount)} />
@@ -149,10 +156,20 @@ export function WeddingDetail({
             <CardDescription>Every stage this wedding has been through.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ol className="space-y-3">
+            <ol className="flex flex-col">
               {wedding.stageHistory.map((event, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+                <li key={i} className="relative flex gap-3 pb-4 text-sm last:pb-0">
+                  {/* The rail joining one stage to the next. */}
+                  {i < wedding.stageHistory.length - 1 && (
+                    <span className="absolute left-[0.3125rem] top-4 bottom-0 w-px bg-border" aria-hidden="true" />
+                  )}
+                  <span
+                    className={cn(
+                      "relative mt-1 size-2.5 shrink-0 rounded-full border-2 border-card ring-1",
+                      i === wedding.stageHistory.length - 1 ? "bg-primary ring-primary" : "bg-muted-foreground/40 ring-border"
+                    )}
+                    aria-hidden="true"
+                  />
                   <div className="flex flex-col">
                     <span className="font-medium text-foreground">
                       {WEDDING_STAGE_LABEL[event.stage as WeddingStage] ?? event.stage}
@@ -204,6 +221,68 @@ export function WeddingDetail({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Where this wedding is on the straight line, at a glance. Cancelled and Lost
+ * are off the line, so they replace it with a plain statement rather than
+ * pretending to be a step.
+ */
+function StageStepper({ stage }: { stage: WeddingStage }) {
+  if (DEAD_STAGES.includes(stage)) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+        <CircleX className="size-4" aria-hidden="true" />
+        <span className="font-medium">{WEDDING_STAGE_LABEL[stage]}</span>
+        <span className="text-xs">— no longer going ahead, and holds nothing in the kitchen.</span>
+      </div>
+    )
+  }
+
+  const current = WEDDING_PROGRESSION.indexOf(stage)
+  return (
+    <ol className="flex items-start" aria-label="Wedding progress">
+      {WEDDING_PROGRESSION.map((step, i) => {
+        const done = i < current
+        const isCurrent = i === current
+        return (
+          <li
+            key={step}
+            className="flex flex-1 flex-col items-center gap-1.5 text-center"
+            aria-current={isCurrent ? "step" : undefined}
+          >
+            <div className="flex w-full items-center">
+              <span className={cn("h-0.5 flex-1", i === 0 ? "bg-transparent" : i <= current ? "bg-primary" : "bg-border")} />
+              <span
+                className={cn(
+                  "flex size-6 shrink-0 items-center justify-center rounded-full border text-[0.65rem] font-semibold",
+                  done && "border-primary bg-primary text-primary-foreground",
+                  isCurrent && "border-primary bg-card text-primary ring-4 ring-primary/15",
+                  !done && !isCurrent && "border-border bg-card text-muted-foreground"
+                )}
+              >
+                {done ? <Check className="size-3.5" aria-hidden="true" /> : i + 1}
+              </span>
+              <span
+                className={cn(
+                  "h-0.5 flex-1",
+                  i === WEDDING_PROGRESSION.length - 1 ? "bg-transparent" : i < current ? "bg-primary" : "bg-border"
+                )}
+              />
+            </div>
+            <span
+              className={cn(
+                "hidden text-[0.7rem] leading-tight @xl:block",
+                isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"
+              )}
+            >
+              {WEDDING_STAGE_LABEL[step]}
+            </span>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
