@@ -4,6 +4,7 @@ import {
   allLedgerEvents,
   averageOrderValue,
   customerSplit,
+  ordersOutstanding,
   totalsFromLedger,
   weddingMoney,
   weddingsByMonth,
@@ -132,6 +133,28 @@ test.describe("average order value", () => {
 
   test("is zero rather than NaN when there is nothing to average", () => {
     expect(averageOrderValue([])).toEqual({ average: 0, counted: 0 })
+  })
+})
+
+test.describe("what counter customers still owe", () => {
+  const pay = (total: number, paid: number, refunded = 0) => ({ total, paid, refunded, state: "x", events: [] })
+
+  test("is each live order's total less what was paid, never below zero", () => {
+    const orders = [
+      order({ payment: pay(3000, 1000) }), // owes 2000
+      order({ payment: pay(1500, 1500) }), // settled
+      order({ payment: pay(1000, 1200) }), // overpaid, owes nothing rather than -200
+    ]
+    expect(ordersOutstanding(orders)).toBe(2000)
+  })
+
+  test("leaves out cancelled orders, and refunds do not become debt", () => {
+    const orders = [
+      order({ status: "Cancelled", payment: pay(5000, 0) }),
+      // Paid in full then half refunded on a complaint: the customer owes nothing.
+      order({ payment: pay(2000, 2000, 1000) }),
+    ]
+    expect(ordersOutstanding(orders)).toBe(0)
   })
 })
 

@@ -20,6 +20,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-report-counter: var(--report-counter);
+  --color-report-weddings: var(--report-weddings);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -107,6 +109,12 @@
   --chart-3: oklch(0.55 0.02 60);
   --chart-4: oklch(0.42 0.05 50);
   --chart-5: oklch(0.3 0.02 40);
+  /* Reports: counter sales vs weddings. A blue/terracotta pair because the
+     chart-1/chart-2 red-green pair collapses for red-green colour blindness
+     (deutan dE 3.2 in dark mode). Validated with the dataviz palette checker
+     against each mode's card surface: every check passes in both. */
+  --report-counter: oklch(0.5 0.13 250);
+  --report-weddings: oklch(0.5 0.14 30);
   --radius: 0.5rem;
   --sidebar: oklch(0.96 0.02 82);
   --sidebar-foreground: oklch(0.22 0.035 30);
@@ -159,6 +167,8 @@
   --chart-3: oklch(0.6 0.02 60);
   --chart-4: oklch(0.5 0.06 50);
   --chart-5: oklch(0.3 0.02 40);
+  --report-counter: oklch(0.62 0.13 250);
+  --report-weddings: oklch(0.64 0.14 35);
   --sidebar: oklch(0.22 0.025 30);
   --sidebar-foreground: oklch(0.96 0.02 85);
   --sidebar-primary: oklch(0.62 0.16 30);

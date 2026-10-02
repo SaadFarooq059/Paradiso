@@ -1,15 +1,15 @@
 import {
   BarChart3,
+  ChefHat,
   HeartHandshake,
-  Receipt,
   TrendingUp,
   TriangleAlert,
-  UserPlus,
   Users,
   Wallet,
   Wheat,
 } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
 import {
@@ -17,7 +17,6 @@ import {
   INGREDIENT_INFO,
   INGREDIENT_ORDER,
 } from "@/lib/mock-data"
-import { AnalyticsBarCard } from "@/components/ui/analytics-bar-card"
 import { OrdersByStatusChart } from "@/components/dashboard/orders-by-status-chart.lazy"
 import { ExportMenu } from "@/components/ui/export-menu"
 import { analyticsDocument } from "@/lib/export/documents"
@@ -29,11 +28,11 @@ import {
   averageOrderValue,
   customerSplit,
   defaultWindowStart,
+  ordersOutstanding,
   totalsFromLedger,
   weddingMoney,
   weddingsByMonth,
 } from "@/lib/reporting"
-import { ProportionRingCard } from "@/components/ui/proportion-ring-card"
 import type { ProductionDayDemand } from "@/components/dashboard/use-dashboard-data"
 import type { IngredientKey, Order, ProductVariant, StaffMember, Wedding } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -102,13 +101,18 @@ export function ReportsAnalyticsPanel({
   const customers = customerSplit(orders, weddings, defaultWindowStart())
 
   // 1. Product performance — total quantity ordered per variant, across all orders
-  const quantityByProduct = new Map<string, number>()
+  // Cancelled orders are left out: a cake nobody is getting is not a sale.
+  const quantityByProduct = new Map<string, { quantity: number; value: number }>()
   for (const order of orders) {
-    quantityByProduct.set(order.productId, (quantityByProduct.get(order.productId) ?? 0) + order.quantity)
+    if (order.status === "Cancelled") continue
+    const entry = quantityByProduct.get(order.productId) ?? { quantity: 0, value: 0 }
+    entry.quantity += order.quantity
+    entry.value += order.payment.total
+    quantityByProduct.set(order.productId, entry)
   }
   const productPerformance = [...quantityByProduct.entries()]
-    .map(([productId, quantity]) => ({ productId, quantity, variant: variantsById[productId] }))
-    .sort((a, b) => b.quantity - a.quantity)
+    .map(([productId, { quantity, value }]) => ({ productId, quantity, value, variant: variantsById[productId] }))
+    .sort((a, b) => b.quantity - a.quantity || b.value - a.value)
   const totalUnitsOrdered = productPerformance.reduce((sum, p) => sum + p.quantity, 0)
 
   // 2. Ingredient consumption — the kitchen's real draw, taken from each
@@ -154,228 +158,323 @@ export function ReportsAnalyticsPanel({
     .map(([ingredient, count]) => ({ ingredient, count }))
     .sort((a, b) => b.count - a.count)
 
+  const owedOnOrders = ordersOutstanding(orders)
+  const capacityUnits = orderedUnits + surplusUnits
+
   return (
-    <div className="@container flex flex-col gap-4">
-      {/* The page heading lives in the dashboard shell, so this row carries the
-          export control alone rather than repeating the title. */}
-      <div className="flex justify-end">
-        <ExportMenu
-          build={() =>
-            analyticsDocument({ orders, variantsById, staff, productionDemand, onHand })
-          }
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
-        <ProportionRingCard
-          className="@2xl:col-span-2 @4xl:col-span-1"
-          caption="In production"
-          total={orderedUnits + surplusUnits}
-          totalSuffix="units coming out of the ovens"
-          segments={[
-            { label: "Ordered", value: orderedUnits, color: "var(--color-chart-2)" },
-            { label: "Spare capacity", value: surplusUnits, color: "var(--color-chart-4)" },
-          ]}
-          emptyMessage="Nothing is in production, so there are no batches to break down yet."
-          action={{ label: "See it day by day", onClick: onViewProduction }}
-        />
-
-        {/* Spans the row: an area chart needs width to be readable, and this is
-            the card that shows the whole order book rather than one slice. */}
-        <OrdersByStatusChart orders={orders} className="@2xl:col-span-2" />
-
-        <AnalyticsBarCard
-          title="Product performance"
-          totalAmount={`${totalUnitsOrdered} ${totalUnitsOrdered === 1 ? "unit" : "units"}`}
-          caption="Ordered per variant, all statuses."
-          icon={<TrendingUp className="size-4" />}
-          data={productPerformance.map(({ quantity, variant }) => ({
-            label: variant?.name ?? "Unknown",
-            value: quantity,
-          }))}
-          emptyMessage="No orders yet — product rankings will show up here."
-        />
-
-        <SectionCard
-          icon={Wheat}
-          title="Ingredient consumption"
-          description={`What the kitchen actually draws, counted in whole batches across every scheduled production day${surplusUnits > 0 ? ` — includes ${surplusUnits} surplus unit${surplusUnits === 1 ? "" : "s"} produced but not ordered` : ""}.`}
-        >
-          {consumptionRows.length === 0 ? (
-            <Empty>
-              <EmptyTitle>Nothing consumed yet</EmptyTitle>
-              <EmptyDescription>Ingredient totals will show up once an order is scheduled.</EmptyDescription>
-            </Empty>
-          ) : (
-            consumptionRows.map(({ key, total }) => {
-              const info = INGREDIENT_INFO[key]
-              const stock = onHand[key] ?? 0
-              return (
-                <Meter
-                  key={key}
-                  label={info.label}
-                  ratio={stock > 0 ? total / stock : 0}
-                  valueLabel={`${total}${info.unit} of ${stock}${info.unit}`}
-                  sublabel={
-                    stock > 0 && total > stock
-                      ? `Over-committed by ${Math.round((total - stock) * 100) / 100}${info.unit}`
-                      : `${stock > 0 ? Math.round((total / stock) * 100) : 0}% of what's in the building`
-                  }
-                />
-              )
-            })
-          )}
-        </SectionCard>
-
-        <SectionCard
-          icon={Users}
-          title="Staff workload"
-          description="Orders currently assigned per staff member (the round-robin counter)."
-        >
-          {staff.map((member) => (
-            <Meter
-              key={member.id}
-              leading={
-                <span
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
-                    getStaffColor(member.name)
-                  )}
-                >
-                  {member.name.charAt(0)}
-                </span>
-              }
-              label={member.name}
-              // Against the busiest person, so the bars answer "who is carrying
-              // more" rather than each filling its own row.
-              ratio={maxOrderCount > 0 ? member.orderCount / maxOrderCount : 0}
-              valueLabel={`${member.orderCount} order${member.orderCount === 1 ? "" : "s"}`}
-              fillClass={getStaffColor(member.name)}
-            />
-          ))}
-        </SectionCard>
-
-        <SectionCard
-          icon={TriangleAlert}
-          title="On Hold summary"
-          description={`${onHoldOrders.length} order${onHoldOrders.length === 1 ? "" : "s"} currently blocked on stock.`}
-        >
-          {blockRows.length === 0 ? (
-            <Empty>
-              <EmptyTitle>Nothing on hold</EmptyTitle>
-              <EmptyDescription>Every order placed so far had enough stock to schedule.</EmptyDescription>
-            </Empty>
-          ) : (
-            blockRows.map(({ ingredient, count }) => (
-              <div
-                key={ingredient}
-                className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
-              >
-                {/* Status always ships with an icon and a label, never colour alone. */}
-                <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
-                <span className="flex-1 text-sm font-medium text-foreground">
-                  {INGREDIENT_INFO[ingredient].label}
-                </span>
-                <span className="font-mono text-xs tabular-nums text-destructive">
-                  blocking {count} order{count === 1 ? "" : "s"}
-                </span>
-              </div>
-            ))
-          )}
-        </SectionCard>
-        <SectionCard
-          icon={Wallet}
-          title="Money taken"
-          description="Every payment and refund, orders and weddings together — one ledger, so these reconcile."
-        >
-          <dl className="grid grid-cols-2 gap-3 @sm:grid-cols-4">
-            <Figure label="Taken" value={formatMoney(money.taken)} />
-            <Figure label="Refunded" value={formatMoney(money.refunded)} tone="negative" />
-            <Figure label="Net" value={formatMoney(money.net)} emphasis />
-            <Figure
-              label="Of which weddings"
-              value={formatMoney(wedding.taken - wedding.refunded)}
-            />
-          </dl>
-          <StackedBarish
-            segments={[
-              { label: "Counter orders", value: Math.max(orderMoney.net, 0), className: "bg-chart-2" },
-              { label: "Weddings", value: Math.max(wedding.taken - wedding.refunded, 0), className: "bg-chart-1" },
-            ]}
-            format={formatMoney}
+    <div className="@container flex flex-col gap-6">
+      {/* Headline figures first: the numbers someone opens Reports to check.
+          The page heading lives in the dashboard shell, so this row carries the
+          export alongside them rather than repeating the title. */}
+      <section className="flex flex-col gap-3" aria-labelledby="reports-headline">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="reports-headline" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            At a glance
+          </h2>
+          <ExportMenu
+            build={() => analyticsDocument({ orders, variantsById, staff, productionDemand, onHand })}
           />
-          <p className="text-xs text-muted-foreground">
-            Refunds are netted off rather than hidden, so this is what the business kept.
-          </p>
-        </SectionCard>
+        </div>
+        <dl className="grid grid-cols-1 gap-3 @md:grid-cols-2 @4xl:grid-cols-4">
+          <StatTile
+            label="Net takings"
+            value={formatMoney(money.net)}
+            detail={`${formatMoney(money.taken)} taken · ${formatMoney(money.refunded)} refunded`}
+          />
+          <StatTile
+            label="Average order"
+            value={formatMoney(aov.average)}
+            detail={`Over ${aov.counted} order${aov.counted === 1 ? "" : "s"}, cancellations left out`}
+          />
+          <StatTile
+            label="Still owed"
+            value={formatMoney(owedOnOrders + wedding.outstanding)}
+            detail={`${formatMoney(owedOnOrders)} on orders · ${formatMoney(wedding.outstanding)} on weddings`}
+          />
+          <StatTile
+            label="New customers"
+            value={String(customers.newCustomers)}
+            detail={`Last 90 days · ${customers.returning} returning · ${customers.repeatCustomers} ordered more than once`}
+          />
+        </dl>
+      </section>
 
+      <Section title="Sales">
+        <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] @4xl:items-start">
+          <SectionCard
+            icon={TrendingUp}
+            title="Best sellers"
+            description={`${totalUnitsOrdered} ${totalUnitsOrdered === 1 ? "cake" : "cakes"} ordered, cancellations left out, with what those orders come to.`}
+          >
+            {productPerformance.length === 0 ? (
+              <Empty>
+                <EmptyTitle>No orders yet</EmptyTitle>
+                <EmptyDescription>Product rankings will show up here.</EmptyDescription>
+              </Empty>
+            ) : (
+              <BarList
+                rows={productPerformance.map(({ productId, quantity, value, variant }) => ({
+                  key: productId,
+                  label: variant?.name ?? "Unknown product",
+                  value: quantity,
+                  valueLabel: String(quantity),
+                  detail: formatMoney(value),
+                }))}
+                fillClass="bg-report-counter"
+              />
+            )}
+          </SectionCard>
+
+          <SectionCard
+            icon={Wallet}
+            title="Money taken"
+            description="Every payment and refund, orders and weddings together — one ledger, so these reconcile."
+          >
+            <dl className="grid grid-cols-3 gap-3">
+              <Figure label="Taken" value={formatMoney(money.taken)} />
+              <Figure label="Refunded" value={formatMoney(money.refunded)} tone="negative" />
+              <Figure label="Net" value={formatMoney(money.net)} emphasis />
+            </dl>
+            <StackedBarish
+              segments={[
+                { label: "Counter orders", value: Math.max(orderMoney.net, 0), className: "bg-report-counter" },
+                { label: "Weddings", value: Math.max(wedding.taken - wedding.refunded, 0), className: "bg-report-weddings" },
+              ]}
+              format={formatMoney}
+            />
+            <p className="text-xs text-muted-foreground">
+              Refunds are netted off rather than hidden, so this is what the business kept.
+            </p>
+          </SectionCard>
+        </div>
+
+        {/* Full width: the order book over time needs the room. */}
+        <OrdersByStatusChart orders={orders} />
+      </Section>
+
+      <Section title="Kitchen">
+        <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-2 @4xl:items-start">
+          <SectionCard
+            icon={ChefHat}
+            title="Batch capacity"
+            description="The ovens bake whole batches, so some of what comes out is spare until someone orders it."
+          >
+            {capacityUnits === 0 ? (
+              <Empty>
+                <EmptyTitle>Nothing in production</EmptyTitle>
+                <EmptyDescription>Batches will show up here once an order is scheduled.</EmptyDescription>
+              </Empty>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-semibold text-foreground">
+                    {Math.round((orderedUnits / capacityUnits) * 100)}%
+                  </span>
+                  <span className="text-sm text-muted-foreground">of baked capacity is ordered</span>
+                </div>
+                <Meter
+                  label="Ordered"
+                  ratio={orderedUnits / capacityUnits}
+                  valueLabel={`${orderedUnits} of ${capacityUnits} units`}
+                  sublabel={`${surplusUnits} spare`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {surplusUnits} spare unit{surplusUnits === 1 ? "" : "s"} across every scheduled
+                  production day — room to take more orders without baking another batch.
+                </p>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={onViewProduction} className="w-fit">
+              See it day by day
+            </Button>
+          </SectionCard>
+
+          <SectionCard
+            icon={Wheat}
+            title="Ingredient draw"
+            description="What scheduled production takes, in whole batches, against what is in the building."
+          >
+            {consumptionRows.length === 0 ? (
+              <Empty>
+                <EmptyTitle>Nothing drawn yet</EmptyTitle>
+                <EmptyDescription>Ingredient totals will show up once an order is scheduled.</EmptyDescription>
+              </Empty>
+            ) : (
+              consumptionRows.map(({ key, total }) => {
+                const info = INGREDIENT_INFO[key]
+                const stock = onHand[key] ?? 0
+                return (
+                  <Meter
+                    key={key}
+                    label={info.label}
+                    ratio={stock > 0 ? total / stock : 0}
+                    valueLabel={`${total.toLocaleString()}${info.unit} of ${stock.toLocaleString()}${info.unit}`}
+                    fillClass={stock > 0 && total > stock ? "bg-destructive" : "bg-primary"}
+                    sublabel={
+                      stock > 0 && total > stock
+                        ? `Over-committed by ${Math.round((total - stock) * 100) / 100}${info.unit}`
+                        : `${stock > 0 ? Math.round((total / stock) * 100) : 0}% of what's in the building`
+                    }
+                  />
+                )
+              })
+            )}
+          </SectionCard>
+
+          <SectionCard
+            icon={Users}
+            title="Staff workload"
+            description="Orders assigned to each person — the counter the round-robin hands work out by."
+          >
+            {staff.map((member) => (
+              <Meter
+                key={member.id}
+                leading={
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+                      getStaffColor(member.name)
+                    )}
+                  >
+                    {member.name.charAt(0)}
+                  </span>
+                }
+                label={member.name}
+                // Against the busiest person, so the bars answer "who is carrying
+                // more" rather than each filling its own row. One hue: the avatar
+                // already says who; the bar only has to say how much.
+                ratio={maxOrderCount > 0 ? member.orderCount / maxOrderCount : 0}
+                valueLabel={`${member.orderCount} order${member.orderCount === 1 ? "" : "s"}`}
+              />
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            icon={TriangleAlert}
+            title="On hold"
+            description={`${onHoldOrders.length} order${onHoldOrders.length === 1 ? "" : "s"} waiting on stock.`}
+          >
+            {blockRows.length === 0 ? (
+              <Empty>
+                <EmptyTitle>Nothing on hold</EmptyTitle>
+                <EmptyDescription>Every order placed so far had enough stock to schedule.</EmptyDescription>
+              </Empty>
+            ) : (
+              blockRows.map(({ ingredient, count }) => (
+                <div
+                  key={ingredient}
+                  className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5"
+                >
+                  {/* Status always ships with an icon and a label, never colour alone. */}
+                  <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-medium text-foreground">
+                    {INGREDIENT_INFO[ingredient].label}
+                  </span>
+                  <span className="font-mono text-xs tabular-nums text-destructive">
+                    blocking {count} order{count === 1 ? "" : "s"}
+                  </span>
+                </div>
+              ))
+            )}
+          </SectionCard>
+        </div>
+      </Section>
+
+      <Section title="Weddings">
         <SectionCard
           icon={HeartHandshake}
-          title="Weddings"
-          description="The bespoke order book: what is quoted, what is held, and what is still owed."
+          title="Wedding book"
+          description="What is quoted, what is held as deposits, and what is still owed — by the month the wedding happens."
         >
-          <dl className="grid grid-cols-2 gap-3 @sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+            <Figure label="Live weddings" value={String(byMonth.reduce((n, m) => n + m.count, 0))} />
             <Figure label="Quoted" value={formatMoney(wedding.quoted)} />
             <Figure label="Deposits held" value={formatMoney(wedding.depositsHeld)} />
-            <Figure label="Outstanding" value={formatMoney(wedding.outstanding)} emphasis />
-            <Figure label="Live" value={String(byMonth.reduce((n, m) => n + m.count, 0))} />
+            <Figure label="Still owed" value={formatMoney(wedding.outstanding)} emphasis />
           </dl>
           {byMonth.length === 0 ? (
             <p className="text-sm text-muted-foreground">No weddings booked yet.</p>
           ) : (
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-foreground">By month</span>
-              {byMonth.map((month) => (
-                <Meter
-                  key={month.month}
-                  label={month.label}
-                  valueLabel={`${month.count} · ${formatMoney(month.value)}`}
-                  ratio={month.value / Math.max(...byMonth.map((m) => m.value), 1)}
-                  fillClass="bg-chart-1"
-                />
-              ))}
-            </div>
+            <BarList
+              rows={byMonth.map((month) => ({
+                key: month.month,
+                label: month.label,
+                value: month.value,
+                valueLabel: formatMoney(month.value),
+                detail: `${month.count} wedding${month.count === 1 ? "" : "s"}`,
+              }))}
+              fillClass="bg-report-weddings"
+            />
           )}
         </SectionCard>
-
-        <SectionCard
-          icon={Receipt}
-          title="Average order value"
-          description="Across orders that were actually fulfilled and had a price."
-        >
-          <div className="flex items-baseline gap-3">
-            <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
-              {formatMoney(aov.average)}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              over {aov.counted} order{aov.counted === 1 ? "" : "s"}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Cancelled orders and anything priced at zero are left out — including them would drag
-            the figure toward nothing and answer a different question.
-          </p>
-        </SectionCard>
-
-        <SectionCard
-          icon={UserPlus}
-          title="New and returning customers"
-          description="By when they first bought, over the last 90 days."
-        >
-          <StackedBarish
-            segments={[
-              { label: "New", value: customers.newCustomers, className: "bg-chart-2" },
-              { label: "Returning", value: customers.returning, className: "bg-chart-4" },
-            ]}
-          />
-          <p className="text-xs text-muted-foreground">
-            &quot;Returning&quot; means they had already bought before this window opened — not that
-            they bought twice inside it. {customers.repeatCustomers} customer
-            {customers.repeatCustomers === 1 ? " has" : "s have"} ordered more than once.
-          </p>
-        </SectionCard>
-      </div>
+      </Section>
     </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const id = `reports-${title.toLowerCase()}`
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby={id}>
+      <h2 id={id} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+/** One headline figure. Proportional digits: it stands alone, it does not align in a column. */
+function StatTile({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <Card className="gap-1 py-4">
+      <CardContent className="flex flex-col gap-1 px-4">
+        <dt className="text-sm text-muted-foreground">{label}</dt>
+        <dd className="text-2xl font-semibold text-foreground">{value}</dd>
+        <dd className="text-xs text-muted-foreground">{detail}</dd>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * A ranked list of horizontal bars, one hue. Horizontal because product names
+ * are long, and a column chart truncates every one of them to "Mini-misu …".
+ * Each bar is labelled at its tip, so no value is reachable only by hovering.
+ */
+function BarList({
+  rows,
+  fillClass,
+}: {
+  rows: { key: string; label: string; value: number; valueLabel: string; detail?: string }[]
+  fillClass: string
+}) {
+  const max = Math.max(...rows.map((r) => r.value), 1)
+  return (
+    <ul className="flex flex-col gap-1">
+      {rows.map((row) => (
+        <li
+          key={row.key}
+          className="grid grid-cols-[minmax(0,11rem)_minmax(0,1fr)] items-center gap-3 rounded-md px-1 py-0.5 hover:bg-muted/50 @2xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]"
+          title={`${row.label}: ${row.valueLabel}${row.detail ? ` · ${row.detail}` : ""}`}
+        >
+          <span className="truncate text-sm text-foreground">{row.label}</span>
+          <span className="flex items-center gap-2">
+            <span className="h-3 min-w-0 flex-1">
+              <span
+                className={cn("block h-full rounded-r-[4px]", fillClass)}
+                style={{ width: `${Math.max((row.value / max) * 100, row.value > 0 ? 2 : 0)}%` }}
+              />
+            </span>
+            {/* Value then detail on one line, aligned as a column so they compare. */}
+            <span className="flex w-36 shrink-0 items-baseline justify-end gap-2 font-mono text-xs tabular-nums">
+              <span className="text-sm font-medium text-foreground">{row.valueLabel}</span>
+              {row.detail && <span className="w-20 truncate text-right text-muted-foreground">{row.detail}</span>}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -423,7 +522,7 @@ function StackedBarish({
   const total = segments.reduce((sum, s) => sum + s.value, 0)
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
+      <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-[4px]">
         {total === 0 ? (
           <div className="h-full w-full rounded-full bg-muted" />
         ) : (
@@ -432,7 +531,7 @@ function StackedBarish({
             .map((segment) => (
               <div
                 key={segment.label}
-                className={cn("h-full rounded-full", segment.className)}
+                className={cn("h-full", segment.className)}
                 style={{ width: `${(segment.value / total) * 100}%` }}
                 title={`${segment.label}: ${segment.value}`}
               />

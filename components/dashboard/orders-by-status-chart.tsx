@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { addDays, format, startOfDay, startOfWeek } from "date-fns"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { BarChart3 } from "lucide-react"
 
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -308,23 +308,10 @@ export function OrdersByStatusChart({ orders, className }: { orders: Order[]; cl
             </div>
 
             <ChartContainer config={chartConfig} className="h-[280px] w-full @3xl:h-[340px]">
-              <AreaChart accessibilityLayer data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
-                <defs>
-                  {activeStatuses.map((status) => (
-                    <linearGradient
-                      key={status}
-                      id={`fill-${STATUS_KEY[status]}`}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="5%" stopColor={seriesColor(status)} stopOpacity={0.85} />
-                      <stop offset="95%" stopColor={seriesColor(status)} stopOpacity={0.35} />
-                    </linearGradient>
-                  ))}
-                </defs>
-
+              {/* Columns, not areas: each bucket is a separate count of orders, and
+                  an area drawn between them invents a slope across days nobody
+                  ordered on. Stacked, because the statuses partition the orders. */}
+              <BarChart accessibilityLayer data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={10} minTickGap={16} />
                 {/* Counts are whole orders, so the axis must not invent halves. */}
@@ -336,28 +323,25 @@ export function OrdersByStatusChart({ orders, className }: { orders: Order[]; cl
                   tickMargin={4}
                 />
 
-                <ChartTooltip
-                  cursor={{ strokeDasharray: "4 4", stroke: "var(--color-border)", strokeWidth: 1 }}
-                  content={<StatusTooltip />}
-                  offset={16}
-                />
+                <ChartTooltip cursor={{ fill: "var(--color-muted)", opacity: 0.5 }} content={<StatusTooltip />} offset={16} />
 
-                {activeStatuses.map((status) => (
-                  <Area
+                {activeStatuses.map((status, i) => (
+                  <Bar
                     key={status}
                     dataKey={STATUS_KEY[status]}
-                    type="linear"
                     stackId="orders"
-                    stroke={seriesColor(status)}
+                    fill={seriesColor(status)}
+                    // A 2px surface-coloured edge is the gap between stacked
+                    // segments, so neighbours read apart without a drawn border.
+                    stroke="var(--color-card)"
                     strokeWidth={2}
-                    fill={`url(#fill-${STATUS_KEY[status]})`}
-                    dot={false}
-                    activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--color-card)" }}
+                    maxBarSize={24}
+                    radius={i === activeStatuses.length - 1 ? [4, 4, 0, 0] : 0}
                   />
                 ))}
 
                 <ChartLegend content={<ChartLegendContent order={activeStatuses.map((s) => STATUS_KEY[s])} />} />
-              </AreaChart>
+              </BarChart>
             </ChartContainer>
           </>
         )}
