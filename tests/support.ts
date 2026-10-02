@@ -7,8 +7,8 @@ import { shopDayOf } from "@/lib/shop-time"
 /**
  * A collection date every seeded product can be made for.
  *
- * Lead times mean "today" is never selectable: Suprema needs 4 days. One week
- * out clears the longest seeded lead time, and Mondays are skipped because the
+ * Lead times mean "today" is never selectable: every product needs 2 days. One
+ * week out clears the longest seeded lead time with room to spare, and Mondays are skipped because the
  * shop does not do Monday collections.
  */
 export function collectionDate(): Date {

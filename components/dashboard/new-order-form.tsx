@@ -130,7 +130,7 @@ export function NewOrderForm({
 
   if (variants.length === 0) {
     return (
-      <Card className="mx-auto w-full max-w-2xl">
+      <Card className="w-full">
         <CardContent>
           <Empty>
             <EmptyTitle>No product recipes yet</EmptyTitle>

@@ -7,13 +7,19 @@ const COCOA = "#4A2E1A"
 const BEAN = "#3B2415"
 const LEAF = "#5A8A55"
 
+interface Topping {
+  top: string
+  dust: string
+}
+
 interface TiramisuArtProps {
   layers: number
   garnish?: "bean" | "bean-leaf"
+  topping: Topping
   className?: string
 }
 
-function TiramisuArt({ layers, garnish, className }: TiramisuArtProps) {
+function TiramisuArt({ layers, garnish, topping, className }: TiramisuArtProps) {
   const stripeHeight = 7
   const width = 30
   const top = 58 - layers * stripeHeight
@@ -45,9 +51,9 @@ function TiramisuArt({ layers, garnish, className }: TiramisuArtProps) {
         )
       })}
 
-      <rect x={32 - width / 2} y={top} width={width} height={5} rx={2.5} fill={CREAM_TOP} />
+      <rect x={32 - width / 2} y={top} width={width} height={5} rx={2.5} fill={topping.top} />
 
-      <g fill={COCOA} opacity={0.55}>
+      <g fill={topping.dust} opacity={0.55}>
         {dust.map((d, i) => (
           <circle key={i} cx={d.cx} cy={d.cy} r={0.8} />
         ))}
@@ -84,14 +90,39 @@ function TiramisuArt({ layers, garnish, className }: TiramisuArtProps) {
   )
 }
 
-const PRODUCT_ART: Record<string, { layers: number; garnish?: "bean" | "bean-leaf" }> = {
-  "mini-classico": { layers: 2 },
-  "grande-classico": { layers: 3, garnish: "bean" },
-  "suprema-classico": { layers: 4, garnish: "bean-leaf" },
+/** Layers and garnish by size, read from the id prefix. */
+const SIZES: Record<string, { layers: number; garnish?: "bean" | "bean-leaf" }> = {
+  mini: { layers: 2 },
+  grande: { layers: 3, garnish: "bean" },
+  suprema: { layers: 4, garnish: "bean-leaf" },
 }
 
+/**
+ * The topping by flavour, read from the id. Vegan and GF Classico are Classico,
+ * so they fall through to cocoa like it does.
+ */
+const TOPPINGS: { match: string; topping: Topping; coffee: boolean }[] = [
+  { match: "biscoff", topping: { top: "#EBCB98", dust: "#A0612B" }, coffee: false },
+  { match: "pistacchio", topping: { top: "#E3E8C2", dust: "#6E8F3A" }, coffee: false },
+  { match: "oreo", topping: { top: "#FFFDF7", dust: "#262220" }, coffee: false },
+]
+const CLASSICO = { topping: { top: CREAM_TOP, dust: COCOA }, coffee: true }
+
+/**
+ * Art for any product, derived from its id rather than listed, so a new flavour
+ * or a product staff create still gets a cake instead of an empty tile. An id
+ * the rules do not recognise is drawn as a plain three-layer Classico.
+ */
 export function ProductArt({ productId, className }: { productId: string; className?: string }) {
-  const spec = PRODUCT_ART[productId]
-  if (!spec) return null
-  return <TiramisuArt layers={spec.layers} garnish={spec.garnish} className={cn(className)} />
+  const size = SIZES[productId.split("-")[0]] ?? { layers: 3 }
+  const flavour = TOPPINGS.find((t) => productId.includes(t.match)) ?? CLASSICO
+  return (
+    <TiramisuArt
+      layers={size.layers}
+      // The coffee bean only belongs on the coffee flavours.
+      garnish={flavour.coffee ? size.garnish : undefined}
+      topping={flavour.topping}
+      className={cn(className)}
+    />
+  )
 }

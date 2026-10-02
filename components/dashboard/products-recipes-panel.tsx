@@ -135,7 +135,7 @@ export function ProductsRecipesPanel({ variants, onSave, onDelete }: ProductsRec
       )}
 
       {editing && (
-        <Card className="mx-auto w-full max-w-3xl">
+        <Card className="w-full">
           <CardHeader>
             <CardTitle>{editing.id ? "Edit recipe" : "New recipe"}</CardTitle>
             <CardDescription>

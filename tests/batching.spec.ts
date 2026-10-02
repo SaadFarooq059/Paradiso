@@ -12,16 +12,15 @@ import { batchFor, committed, placeOrder,
  * date picker: they are assertions about the engine's arithmetic, and driving the
  * calendar four times over would test the picker instead.
  *
- * Seeded Suprema: 10 eggs per batch, yield 2, lead time 4 days.
+ * Seeded Suprema: 10 eggs per batch, yield 2, lead time 2 days.
  */
 
 test.beforeEach(async ({ page }) => {
   await resetDemoData(page)
   // The data routes require a session now, so the API-level specs need one too.
   await signInViaApi(page)
-  // The larger sizes carry estimated prices, which the client may yet correct.
-  // These specs assert exact money, so they pin the two they use rather than
-  // depending on an estimate that is expected to move.
+  // These specs assert exact money, so they pin the two prices they use rather
+  // than depending on reference data the client may yet change.
   await priceVariant(page, "suprema-classico", 4500)
   await priceVariant(page, "grande-classico", 2800)
 })

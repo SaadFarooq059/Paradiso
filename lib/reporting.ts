@@ -120,6 +120,17 @@ export function averageOrderValue(orders: Order[]): { average: number; counted: 
   return { average: Math.round(total / counted.length), counted: counted.length }
 }
 
+/**
+ * What counter customers still owe: each live order's total less what has been
+ * paid against it. Cancelled orders owe nothing. Refunds do not add to the
+ * debt — money handed back on a complaint is not money the customer now owes.
+ */
+export function ordersOutstanding(orders: Order[]): number {
+  return orders
+    .filter((o) => o.status !== "Cancelled")
+    .reduce((sum, o) => sum + Math.max(o.payment.total - o.payment.paid, 0), 0)
+}
+
 /* ------------------------------------------------------------ customers */
 
 export interface CustomerSplit {

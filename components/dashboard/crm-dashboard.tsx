@@ -87,6 +87,8 @@ export function CrmDashboard() {
   const { currentUser, isLoading: isAuthLoading, signOut } = useAuth()
   const { data, variantsById, isLoading: isDataLoading, mutate } = useDashboardData()
   const [view, setView] = useState<DashboardView | null>(null)
+  /** Set by Stock Levels' Restock button; cleared on any other navigation. */
+  const [restockIngredient, setRestockIngredient] = useState<IngredientKey | null>(null)
   const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   // Which day the Production Calendar is focused on. Lives here rather than inside
@@ -129,6 +131,7 @@ export function CrmDashboard() {
   function handleViewChange(nextView: DashboardView) {
     setSelectedOrderId(null)
     setPrefilledDate(null)
+    setRestockIngredient(null)
     setView(nextView)
   }
 
@@ -342,9 +345,29 @@ export function CrmDashboard() {
                 />
               )}
               {view === "restock" && (
-                <IngredientsRestockPanel stock={stock} restockLog={restockLog} onRestock={handleRestock} />
+                <IngredientsRestockPanel
+                  key={restockIngredient ?? "default"}
+                  initialIngredient={restockIngredient ?? undefined}
+                  stock={stock}
+                  capacity={capacity}
+                  restockLog={restockLog}
+                  onRestock={handleRestock}
+                />
               )}
-              {view === "stock" && <StockLevelsPanel available={stock} capacity={capacity} />}
+              {view === "stock" && (
+                <StockLevelsPanel
+                  available={stock}
+                  capacity={capacity}
+                  onRestock={
+                    can(currentUser.role, "stock:restock")
+                      ? (ingredient) => {
+                          handleViewChange("restock")
+                          setRestockIngredient(ingredient)
+                        }
+                      : undefined
+                  }
+                />
+              )}
               {view === "reports" && (
                 <ReportsAnalyticsPanel
                   orders={orders}
