@@ -75,6 +75,13 @@ export function OrdersTable({ orders, variantsById, onSelectOrder }: OrdersTable
                               {variant.servings}
                             </span>
                           )}
+                          {order.squarespace && (
+                            <span className="text-xs font-normal text-muted-foreground">
+                              Squarespace #{order.squarespace.orderNumber}
+                              {order.squarespace.flags.some((flag) => !flag.startsWith("Same Squarespace order")) &&
+                                " · check notes"}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </TableCell>

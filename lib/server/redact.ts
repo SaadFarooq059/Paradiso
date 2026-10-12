@@ -32,6 +32,15 @@ export function redactStateFor(role: StaffRole, state: DashboardState): Dashboar
         : // Zeroed and emptied rather than dropped: the shape stays valid for
           // the UI, and there is no figure in it to read.
           { total: 0, paid: 0, refunded: 0, state: "Unpaid" as const, events: [] },
+      // Import notes are kitchen-facing, except a refund note, which quotes money.
+      squarespace: order.squarespace
+        ? {
+            ...order.squarespace,
+            flags: seesMoney
+              ? order.squarespace.flags
+              : order.squarespace.flags.filter((flag) => !flag.startsWith("Refunded")),
+          }
+        : order.squarespace,
     })),
     // Weddings carry the same two things as an order — a named customer and a
     // ledger — and were being sent whole. The Kitchen screen lists them so the
