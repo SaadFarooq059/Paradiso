@@ -87,6 +87,7 @@ export function OrderDetailPanel({
                 <CardTitle className="text-lg">{variant?.name ?? "Unknown product"}</CardTitle>
                 <CardDescription>
                   {variant?.servings ?? "Recipe no longer exists"} · Qty {order.quantity}
+                  {order.squarespace && ` · Squarespace #${order.squarespace.orderNumber}`}
                 </CardDescription>
               </div>
             </div>
@@ -140,6 +141,25 @@ export function OrderDetailPanel({
               <span className="font-mono text-xs text-muted-foreground">{order.id.slice(0, 8)}</span>
             </div>
           </div>
+
+          {order.squarespace && (
+            <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+              <h3 className="text-sm font-medium text-foreground">
+                Ordered on Squarespace #{order.squarespace.orderNumber}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Paid on Squarespace, which also emails this customer. Find it there by its number;
+                nothing done here changes the Squarespace order.
+              </p>
+              {order.squarespace.flags.length > 0 && (
+                <ul className="list-disc space-y-1 pl-4 text-sm text-foreground">
+                  {order.squarespace.flags.map((flag) => (
+                    <li key={flag}>{flag}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-foreground">Customer</h3>

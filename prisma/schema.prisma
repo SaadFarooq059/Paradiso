@@ -89,6 +89,18 @@ enum OrderStatus {
   Cancelled
 }
 
+/// Where an order was taken.
+///
+/// Until the switch to the custom website, customers still order on Squarespace
+/// and the import copies those orders in. They behave differently in exactly two
+/// ways, both because Squarespace already dealt with the customer: the calendar
+/// rules warn rather than refuse (the date was agreed and paid for), and the
+/// portal never emails the customer (Squarespace already did).
+enum OrderSource {
+  Portal
+  Squarespace
+}
+
 /// Money moving in or out. Amounts are always positive; `kind` gives direction.
 enum PaymentEventKind {
   Payment
@@ -329,12 +341,22 @@ model Order {
   /// requires one for new orders.
   customerId String?
 
-  customer      Customer?             @relation(fields: [customerId], references: [id])
+  source              OrderSource @default(Portal)
+  /// The customer-facing order number on Squarespace ("908"), so staff can find
+  /// the same order in both places. One Squarespace order can become several
+  /// portal orders — one per cake — and they share this number.
+  externalOrderNumber String?
+  /// Things staff should know that the import could not fix: short notice, a
+  /// Monday collection, a decoration choice. Shown on the order, never enforced.
+  importFlags         String[]    @default([])
+
+  customer      Customer?              @relation(fields: [customerId], references: [id])
   items         OrderItem[]
   statusHistory OrderStatusEvent[]
   payments      PaymentEvent[]
   emails        EmailMessage[]
   assignment    ProductionAssignment?
+  importLine    SquarespaceImportLine?
 
   @@index([customerId])
   @@map("orders")
@@ -671,4 +693,39 @@ model WeddingExtra {
   sortOrder           Int     @default(0)
 
   @@map("wedding_extras")
+}
+
+/// Every Squarespace line item the import has looked at, and what it did.
+///
+/// Keyed on Squarespace's own line-item id, which is what makes the import safe
+/// to run again and again: a line already imported is never imported twice, and
+/// a run that overlaps another fails on this key rather than duplicating a cake.
+///
+/// Lines that were NOT imported are kept too, with the reason. Most of the shop
+/// (pots, dishes, cannoli, merch, seasonal flavours) has no portal recipe yet,
+/// and staff need to see what the production plan is not covering rather than
+/// assume it covers everything.
+model SquarespaceImportLine {
+  /// Squarespace's line-item id.
+  lineItemId         String   @id
+  squarespaceOrderId String
+  orderNumber        String
+  productName        String
+  /// Variant options as Squarespace shows them ("Size=Mini-misù (6”, serves ~4)").
+  options            String   @default("")
+  quantity           Int
+  /// The collection date exactly as the customer's answer arrived, before parsing.
+  collectionRaw      String?
+  /// What the import did with it — see SQUARESPACE_OUTCOMES in lib/squarespace/import.ts.
+  outcome            String
+  /// The portal order this line became, when it became one.
+  portalOrderId      String?  @unique
+  firstSeenAt        DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+
+  portalOrder Order? @relation(fields: [portalOrderId], references: [id], onDelete: SetNull)
+
+  @@index([orderNumber])
+  @@index([outcome])
+  @@map("squarespace_import_lines")
 }

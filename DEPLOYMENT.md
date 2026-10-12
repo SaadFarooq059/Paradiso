@@ -11,6 +11,17 @@ process on the same port. There is no separate backend to deploy.
 | `AUTH_SECRET` | **Yes** | Signs session cookies. At least 32 characters of random data; generate with `openssl rand -base64 48`. A shorter value is refused rather than accepted, so a half-configured deployment fails closed and nobody can sign in — which is the safe direction. Changing it signs everyone out. |
 | `RESET_TOKEN` | No | Bearer token for `POST /api/reset` out of band (the test suite uses it). If unset, that path does not exist and only a signed-in admin can reset. |
 
+The Squarespace import (stage 1 of the migration) is off unless all three are set:
+
+| Variable | What it is |
+| --- | --- |
+| `SQUARESPACE_API_KEY` | A Squarespace Developer API key with **read-only** Orders, Inventory, Transactions and Forms. The portal's client cannot write to Squarespace whatever the key allows, but a read-only key makes that true twice. |
+| `SQUARESPACE_IMPORT_ENABLED` | `true` to switch the import on. Anything else leaves `/api/squarespace/sync` answering "switched off" — turning it off again needs no code deploy. |
+| `CRON_SECRET` | Bearer token for the scheduled `GET /api/squarespace/sync`. Vercel Cron sends it automatically when set. Unset, only a signed-in Admin can run the import (`POST`). |
+
+Run `npx tsx scripts/squarespace-import.ts --days=30` first: it is a dry run that
+prints what would be imported and writes nothing. Add `--apply` to write.
+
 Two optional ones exist for tooling:
 
 | Variable | Used by | Default |

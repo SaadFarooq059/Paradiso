@@ -110,19 +110,25 @@ export async function renderEmailsForStatus(
   // rather than skipped, so the demo shows the message that would have gone and
   // says plainly why it did not.
   const noAddress = !order.customer?.email
+  // Squarespace already looks after these customers — it sent the confirmation
+  // and owns the conversation until the switch. A second voice from the portal
+  // would be confusing, so every message is logged and none goes out.
+  const fromSquarespace = order.source === "Squarespace"
 
   await tx.emailMessage.create({
     data: {
       orderId,
       template: TEMPLATE_TO_DB[template],
-      status: noAddress
+      status: fromSquarespace || noAddress
         ? "Suppressed"
         : reminderHasPassed
           ? "Suppressed"
           : sendAfter
             ? "Pending"
             : "ReadyToSend",
-      suppressedReason: noAddress
+      suppressedReason: fromSquarespace
+        ? `Squarespace order #${order.externalOrderNumber} — Squarespace emails this customer`
+        : noAddress
         ? "No customer email on this order"
         : reminderHasPassed
           ? "Collection is too soon for a day-before reminder"

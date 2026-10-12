@@ -191,6 +191,16 @@ const UNAVAILABLE_NOTE: Record<UnavailableReason, string> = {
 }
 
 /**
+ * An order whose date was agreed somewhere the portal does not control — today,
+ * the Squarespace checkout. Its calendar rules are advice, not a refusal: the
+ * customer has paid for that day, and refusing to schedule it would only leave
+ * a real cake out of the kitchen's plan.
+ */
+function takenElsewhere(order: { source: string }): boolean {
+  return order.source === "Squarespace"
+}
+
+/**
  * Round-robin, now keyed to the production day rather than to lifetime totals.
  *
  * The question the kitchen actually asks is "who is making things on the day
@@ -384,14 +394,20 @@ export async function scheduleOrder(
     // Re-validated, not just re-costed. An order can sit Confirmed long enough
     // for its collection date to fall inside the lead time or onto a day the
     // shop has since closed.
+    //
+    // Except a Squarespace order: the customer chose that date on the shop's own
+    // checkout and has paid for it, so the kitchen has to make it whatever the
+    // portal's rules say. The import has already flagged anything unusual.
     const settings = await readCalendarSettings(tx)
     const { orders: existingOrders, variantsById } = await readScheduleContext(tx)
-    const unavailable = collectionDateUnavailableReason(order.collectionDate, {
-      variant,
-      settings,
-      orders: existingOrders.filter((other) => other.id !== orderId),
-      variantsById,
-    })
+    const unavailable = takenElsewhere(order)
+      ? null
+      : collectionDateUnavailableReason(order.collectionDate, {
+          variant,
+          settings,
+          orders: existingOrders.filter((other) => other.id !== orderId),
+          variantsById,
+        })
     if (unavailable) {
       return { message: UNAVAILABLE_MESSAGE[unavailable], tone: "error" as const }
     }
@@ -490,12 +506,14 @@ export async function recheckOrder(
     // schedule the New Order screen would have refused.
     const settings = await readCalendarSettings(tx)
     const { orders: existingOrders } = await readScheduleContext(tx)
-    const unavailable = collectionDateUnavailableReason(order.collectionDate, {
-      variant,
-      settings,
-      orders: existingOrders,
-      variantsById: leadTimes,
-    })
+    const unavailable = takenElsewhere(order)
+      ? null
+      : collectionDateUnavailableReason(order.collectionDate, {
+          variant,
+          settings,
+          orders: existingOrders,
+          variantsById: leadTimes,
+        })
     if (unavailable) {
       await tx.order.update({
         where: { id: orderId },
@@ -659,7 +677,8 @@ const CANCELLABLE: OrderStatus[] = [
 
 export async function cancelOrder(
   orderId: string,
-  actor: StaffMember | null = null
+  actor: StaffMember | null = null,
+  note: string | null = null
 ): Promise<MutationResult> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -684,7 +703,7 @@ export async function cancelOrder(
       where: { id: orderId },
       data: {
         status: toDbStatus("Cancelled"),
-        statusHistory: { create: { status: toDbStatus("Cancelled"), actorId: actor?.id ?? null } },
+        statusHistory: { create: { status: toDbStatus("Cancelled"), note, actorId: actor?.id ?? null } },
       },
     })
 

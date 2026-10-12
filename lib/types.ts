@@ -208,6 +208,12 @@ export interface Order {
   payment: PaymentSummary
   /** Customer messages rendered for this order, oldest first. */
   emails: OrderEmail[]
+  /**
+   * Set when the customer ordered on Squarespace and the import copied it in.
+   * The order number is how staff find the same order there; the flags are what
+   * the shop's checkout did not check (short notice, a closed day, other items).
+   */
+  squarespace?: { orderNumber: string | null; flags: string[] } | null
 }
 
 export interface StaffMember {

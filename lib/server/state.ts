@@ -181,6 +181,10 @@ export async function loadDashboardState(db: Db = prisma): Promise<DashboardStat
         actorName: event.actor?.name ?? null,
       })),
       createdAt: order.createdAt.getTime(),
+      squarespace:
+        order.source === "Squarespace"
+          ? { orderNumber: order.externalOrderNumber, flags: order.importFlags }
+          : null,
       customer: order.customer
         ? {
             id: order.customer.id,
