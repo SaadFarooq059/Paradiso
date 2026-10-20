@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { can } from "@/lib/auth/roles"
+import { isLiveData } from "@/lib/deployment"
 
 import { resetDemoData } from "@/lib/server/admin-service"
 import { mutationResponse } from "@/lib/server/respond"
@@ -32,6 +33,17 @@ function presentedToken(request: Request): string | null {
 }
 
 export async function POST(request: Request) {
+  // A reset rebuilds staff from the development logins, whose passwords are in
+  // the repository. Against the shop's real data that would delete the owners'
+  // accounts and open the portal to anyone who has read the code — so on a live
+  // deployment the route does not exist, for anyone, token or not.
+  if (isLiveData) {
+    return NextResponse.json(
+      { message: "Reset is disabled on the live site.", tone: "error" as const },
+      { status: 404 }
+    )
+  }
+
   const expected = process.env.RESET_TOKEN
   const presented = presentedToken(request)
 

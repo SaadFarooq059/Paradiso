@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { useAuth } from "@/components/auth/auth-context"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
@@ -17,6 +18,7 @@ import { ProductsRecipesPanel } from "@/components/dashboard/products-recipes-pa
 import { ReportsAnalyticsPanel } from "@/components/dashboard/reports-analytics-panel"
 import { type DashboardView, isPreviewView, SidebarNav } from "@/components/dashboard/sidebar-nav"
 import { CalendarRulesPanel } from "@/components/dashboard/calendar-rules-panel"
+import { SquarespacePanel } from "@/components/dashboard/squarespace-panel"
 import { StaffManagementPanel } from "@/components/dashboard/staff-management-panel"
 import { StockLevelsPanel } from "@/components/dashboard/stock-levels-panel"
 import { WeddingsPanel } from "@/components/dashboard/weddings-panel"
@@ -68,6 +70,10 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
     title: "Calendar Rules",
     description: "Which days and times orders can be collected — admin only.",
   },
+  squarespace: {
+    title: "Squarespace",
+    description: "Orders from the online shop: what is in the production plan, and what still needs an answer.",
+  },
   "preview-logins": {
     title: "Staff Logins & Permissions",
     description: "Preview only — a look at how individual logins and role-based views would work.",
@@ -85,7 +91,7 @@ const VIEW_META: Record<DashboardView, { title: string; description: string }> =
 export function CrmDashboard() {
   const router = useRouter()
   const { currentUser, isLoading: isAuthLoading, signOut } = useAuth()
-  const { data, variantsById, isLoading: isDataLoading, mutate } = useDashboardData()
+  const { data, variantsById, isLoading: isDataLoading, mutate, refresh } = useDashboardData()
   const [view, setView] = useState<DashboardView | null>(null)
   /** Set by Stock Levels' Restock button; cleared on any other navigation. */
   const [restockIngredient, setRestockIngredient] = useState<IngredientKey | null>(null)
@@ -99,6 +105,66 @@ export function CrmDashboard() {
   // collection date already chosen. Cleared once the form has taken it, or the
   // date would reappear on every later visit to the screen.
   const [prefilledDate, setPrefilledDate] = useState<Date | null>(null)
+
+  // Bumped after every Squarespace run that happened, so the Squarespace screen re-reads.
+  const [syncVersion, setSyncVersion] = useState(0)
+  const canSync = currentUser ? can(currentUser.role, "squarespace:sync") : false
+
+  /**
+   * Asks the server to check Squarespace. "auto" is skipped server-side when the
+   * shop was checked in the last ten minutes, so every open tab calling this is
+   * cheap; "now" is the Check now button. New orders are pulled into the plan by
+   * re-reading state, because the import wrote them, not this tab.
+   */
+  const syncSquarespace = useCallback(
+    async (mode: "auto" | "now") => {
+      try {
+        const response = await fetch("/api/squarespace/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        })
+        // Switched off on this deployment: nothing to say unless someone asked.
+        if (response.status === 404) {
+          if (mode === "now") toast.error("The Squarespace import is switched off.")
+          return
+        }
+        const payload = (await response.json().catch(() => ({}))) as {
+          ran?: boolean
+          message?: string
+          report?: { created: number; cancelled: number; flaggedForStaff: number }
+        }
+        if (!response.ok) {
+          if (mode === "now") toast.error(payload.message ?? "Couldn't reach Squarespace.")
+          return
+        }
+        if (!payload.ran) {
+          if (mode === "now") toast.message(payload.message ?? "Squarespace was checked moments ago.")
+          return
+        }
+        setSyncVersion((version) => version + 1)
+        const report = payload.report
+        const changed = report ? report.created + report.cancelled + report.flaggedForStaff : 0
+        if (changed > 0) {
+          await refresh()
+          toast.success(`Squarespace: ${payload.message}`)
+        } else if (mode === "now") {
+          toast.success("Squarespace checked — nothing new.")
+        }
+      } catch {
+        if (mode === "now") toast.error("Couldn't reach the server.")
+      }
+    },
+    [refresh]
+  )
+
+  // While a dashboard that may sync is open, keep the plan within ten minutes of the shop.
+  useEffect(() => {
+    if (!canSync) return
+    void syncSquarespace("auto")
+    const timer = setInterval(() => void syncSquarespace("auto"), 5 * 60_000)
+    return () => clearInterval(timer)
+  }, [canSync, syncSquarespace])
 
   const { orders, stock, capacity, staff, variants, restockLog, calendarSettings, productionDemand,
     weddings,
@@ -377,6 +443,13 @@ export function CrmDashboard() {
                   weddings={weddings}
                   onHand={capacity}
                   onViewProduction={() => handleViewChange("calendar")}
+                />
+              )}
+              {view === "squarespace" && canSync && (
+                <SquarespacePanel
+                  syncVersion={syncVersion}
+                  onCheckNow={() => syncSquarespace("now")}
+                  onSelectOrder={setSelectedOrderId}
                 />
               )}
               {view === "calendar-rules" && can(currentUser.role, "settings:manage") && (

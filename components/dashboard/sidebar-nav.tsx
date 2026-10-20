@@ -16,6 +16,7 @@ import {
   Receipt,
   RotateCcw,
   ShieldCheck,
+  ShoppingBag,
   Store,
   UserCog,
 } from "lucide-react"
@@ -30,6 +31,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { isLiveData } from "@/lib/deployment"
 import { cn } from "@/lib/utils"
 
 export type DashboardView =
@@ -43,6 +45,7 @@ export type DashboardView =
   | "reports"
   | "staff"
   | "calendar-rules"
+  | "squarespace"
   | PreviewView
 
 /**
@@ -69,6 +72,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: "new-order", label: "New Order", icon: PlusCircle, needs: "orders:create" },
   { id: "orders", label: "Orders", icon: ClipboardList },
+  { id: "squarespace", label: "Squarespace", icon: ShoppingBag, needs: "squarespace:sync" },
   { id: "calendar", label: "Calendar", icon: CalendarRange, needs: "production:view" },
   { id: "recipes", label: "Recipes", icon: NotebookPen, needs: "recipes:manage" },
   { id: "restock", label: "Restock", icon: PackagePlus, needs: "stock:restock" },
@@ -114,7 +118,8 @@ export function SidebarNav({
   const visibleItems = NAV_ITEMS.filter((item) => !item.needs || can(currentUser.role, item.needs))
   // Resetting the demo rewrites everyone's data, so it sits behind the same
   // capability as the rest of the shop's configuration.
-  const canReset = can(currentUser.role, "settings:manage")
+  // Never offered on live data, where the route refuses it anyway.
+  const canReset = !isLiveData && can(currentUser.role, "settings:manage")
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
