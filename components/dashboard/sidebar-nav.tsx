@@ -30,6 +30,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { isLiveData } from "@/lib/deployment"
 import { cn } from "@/lib/utils"
 
 export type DashboardView =
@@ -114,7 +115,8 @@ export function SidebarNav({
   const visibleItems = NAV_ITEMS.filter((item) => !item.needs || can(currentUser.role, item.needs))
   // Resetting the demo rewrites everyone's data, so it sits behind the same
   // capability as the rest of the shop's configuration.
-  const canReset = can(currentUser.role, "settings:manage")
+  // Never offered on live data, where the route refuses it anyway.
+  const canReset = !isLiveData && can(currentUser.role, "settings:manage")
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
