@@ -16,6 +16,7 @@ import {
   Receipt,
   RotateCcw,
   ShieldCheck,
+  ShoppingBag,
   Store,
   UserCog,
 } from "lucide-react"
@@ -44,6 +45,7 @@ export type DashboardView =
   | "reports"
   | "staff"
   | "calendar-rules"
+  | "squarespace"
   | PreviewView
 
 /**
@@ -70,6 +72,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: "new-order", label: "New Order", icon: PlusCircle, needs: "orders:create" },
   { id: "orders", label: "Orders", icon: ClipboardList },
+  { id: "squarespace", label: "Squarespace", icon: ShoppingBag, needs: "squarespace:sync" },
   { id: "calendar", label: "Calendar", icon: CalendarRange, needs: "production:view" },
   { id: "recipes", label: "Recipes", icon: NotebookPen, needs: "recipes:manage" },
   { id: "restock", label: "Restock", icon: PackagePlus, needs: "stock:restock" },

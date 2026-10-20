@@ -3,6 +3,9 @@ import { expect, test } from "@playwright/test"
 import { matchProduct } from "@/lib/squarespace/catalogue"
 import { parseCollectionDate } from "@/lib/squarespace/collection-date"
 import { isCancelled, toPence } from "@/lib/squarespace/import"
+import { windowDays } from "@/lib/squarespace/sync"
+
+import { resetDemoData, signInAs } from "./support"
 
 /**
  * The parts of the Squarespace import that decide what the kitchen makes, and
@@ -94,5 +97,54 @@ test.describe("money and cancellations", () => {
     expect(isCancelled({ fulfillmentStatus: "CANCELED", paymentState: "PAID" })).toBe(true)
     expect(isCancelled({ fulfillmentStatus: "PENDING", paymentState: "PAID" })).toBe(false)
     expect(isCancelled({ fulfillmentStatus: "FULFILLED", paymentState: "PAID" })).toBe(false)
+  })
+})
+
+test.describe("how far back each sync reads", () => {
+  const now = new Date("2026-10-20T09:00:00Z")
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000)
+
+  test("the first run reads sixty days, so orders placed weeks ahead are found", () => {
+    expect(windowDays(null, now)).toBe(60)
+  })
+
+  test("a run soon after the last one still overlaps by three days", () => {
+    expect(windowDays(hoursAgo(1), now)).toBe(3)
+  })
+
+  test("after a gap it reads back to the last good run, with a day to spare", () => {
+    expect(windowDays(hoursAgo(24 * 9 + 1), now)).toBe(11)
+  })
+
+  test("a very long gap is capped at sixty days", () => {
+    expect(windowDays(hoursAgo(24 * 200), now)).toBe(60)
+  })
+})
+
+test.describe("who can see and run the import", () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDemoData(page)
+  })
+
+  for (const role of ["Kitchen", "ShopFloor"] as const) {
+    test(`${role} is refused`, async ({ page }) => {
+      await signInAs(page, role)
+      const status = await page.request.get("/api/squarespace/status")
+      expect(status.status()).toBe(403)
+    })
+  }
+
+  test("a manager can see it", async ({ page }) => {
+    await signInAs(page, "Manager")
+    const status = await page.request.get("/api/squarespace/status")
+    expect(status.status()).toBe(200)
+    const body = await status.json()
+    expect(body).toHaveProperty("lines")
+    expect(body).toHaveProperty("enabled")
+  })
+
+  test("signed out, nothing", async ({ page }) => {
+    const status = await page.request.get("/api/squarespace/status")
+    expect(status.status()).toBe(401)
   })
 })

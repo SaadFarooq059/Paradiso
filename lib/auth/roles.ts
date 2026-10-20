@@ -59,6 +59,8 @@ export type Capability =
   | "recipes:manage"
   | "staff:manage"
   | "settings:manage"
+  /** See what came in from Squarespace and check it now. Read-only on Squarespace's side. */
+  | "squarespace:sync"
 
 const ADMIN: Capability[] = [
   "orders:create",
@@ -79,6 +81,7 @@ const ADMIN: Capability[] = [
   "recipes:manage",
   "staff:manage",
   "settings:manage",
+  "squarespace:sync",
 ]
 
 /**
@@ -102,6 +105,7 @@ const MANAGER: Capability[] = [
   "weddings:view",
   "weddings:manage",
   "stock:restock",
+  "squarespace:sync",
 ]
 
 /**
@@ -191,6 +195,7 @@ export const VIEW_CAPABILITY: Record<string, Capability | undefined> = {
   staff: "staff:manage",
   "calendar-rules": "settings:manage",
   weddings: "weddings:view",
+  squarespace: "squarespace:sync",
 }
 
 /** The order a role is offered screens in; the first it can use is where it lands. */
@@ -205,6 +210,7 @@ const VIEW_ORDER = [
   "restock",
   "staff",
   "calendar-rules",
+  "squarespace",
   "weddings",
 ]
 

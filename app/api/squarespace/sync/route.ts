@@ -3,10 +3,10 @@ import { timingSafeEqual } from "node:crypto"
 import { NextResponse } from "next/server"
 
 import { withCapability } from "@/lib/server/guard"
-import { importSquarespaceOrders } from "@/lib/squarespace/import"
+import { importEnabled, runSquarespaceSync, type SyncOutcome } from "@/lib/squarespace/sync"
 
 export const dynamic = "force-dynamic"
-// One page of orders at one request a second, plus the writes — well inside this.
+// The first run reads 60 days at one request a second, plus the writes — well inside this.
 export const maxDuration = 60
 
 /**
@@ -17,19 +17,17 @@ export const maxDuration = 60
  * off again is one environment variable, no deploy of code.
  *
  * Two ways in:
- *  - GET with `Authorization: Bearer $CRON_SECRET`, which is how a scheduler
- *    (Vercel Cron sends exactly this header) runs it every few minutes; and
- *  - POST from a signed-in Admin, to run it now.
+ *  - GET with `Authorization: Bearer $CRON_SECRET`, which is how Vercel Cron
+ *    runs it once a day; and
+ *  - POST from a signed-in Admin or Manager: `{ "mode": "auto" }` from an open
+ *    dashboard (skipped if the shop was checked in the last ten minutes), or
+ *    `{ "mode": "now" }` from the Check now button.
  *
  * With CRON_SECRET unset the scheduled path does not exist, rather than falling
  * back to "no secret needed".
  *
  * The response carries order numbers and product names only — no customers.
  */
-
-function enabled(): boolean {
-  return process.env.SQUARESPACE_IMPORT_ENABLED === "true"
-}
 
 const DISABLED = () =>
   NextResponse.json(
@@ -45,36 +43,39 @@ function bearerMatches(request: Request, expected: string): boolean {
   return presented.length === wanted.length && timingSafeEqual(presented, wanted)
 }
 
-async function run() {
-  try {
-    const report = await importSquarespaceOrders({ days: 3, apply: true })
-    return NextResponse.json({
-      message: `${report.created} imported · ${report.cancelled} cancelled · ${report.flaggedForStaff} flagged`,
-      tone: "success" as const,
-      report,
-    })
-  } catch (error) {
-    // Squarespace being down or slow must never take the portal with it: the
-    // next run simply tries again, and nothing half-written is left behind
-    // because each cake is imported in its own transaction.
+function respond(outcome: SyncOutcome) {
+  if (!outcome.ran) {
+    return NextResponse.json({ ran: false, message: outcome.reason, tone: "warning" as const })
+  }
+  if (!outcome.ok) {
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Import failed.", tone: "error" as const },
+      { ran: true, message: `Couldn't reach Squarespace: ${outcome.error}`, tone: "error" as const },
       { status: 502 }
     )
   }
+  const { report } = outcome
+  return NextResponse.json({
+    ran: true,
+    message: `${report.created} imported · ${report.cancelled} cancelled · ${report.flaggedForStaff} flagged`,
+    tone: "success" as const,
+    report,
+  })
 }
 
 export async function GET(request: Request) {
-  if (!enabled()) return DISABLED()
+  if (!importEnabled()) return DISABLED()
   const secret = process.env.CRON_SECRET
   if (!secret) return DISABLED()
   if (!bearerMatches(request, secret)) {
     return NextResponse.json({ message: "Not authorised.", tone: "error" as const }, { status: 401 })
   }
-  return run()
+  return respond(await runSquarespaceSync("schedule"))
 }
 
-export async function POST() {
-  if (!enabled()) return DISABLED()
-  return withCapability("settings:manage")(() => run())
+export async function POST(request: Request) {
+  if (!importEnabled()) return DISABLED()
+  return withCapability("squarespace:sync")(async () => {
+    const body = (await request.json().catch(() => ({}))) as { mode?: string }
+    return respond(await runSquarespaceSync(body.mode === "now" ? "staff" : "auto"))
+  })
 }

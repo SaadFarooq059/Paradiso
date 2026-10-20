@@ -729,3 +729,26 @@ model SquarespaceImportLine {
   @@index([outcome])
   @@map("squarespace_import_lines")
 }
+
+/// One run of the Squarespace import: when, why, and what came of it. Lets the
+/// portal say "last checked 4 minutes ago" and space runs out, and keeps a
+/// failure visible instead of buried in a log nobody at the shop reads.
+model SquarespaceSyncRun {
+  id         Int       @id @default(autoincrement())
+  /// "schedule" (the daily cron), "staff" (Check now) or "auto" (an open dashboard).
+  trigger    String
+  /// How far back this run read, in days.
+  days       Int
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  /// Null while running; a run that never finishes stays null and is ignored.
+  ok         Boolean?
+  ordersSeen Int       @default(0)
+  created    Int       @default(0)
+  cancelled  Int       @default(0)
+  flagged    Int       @default(0)
+  error      String?
+
+  @@index([startedAt])
+  @@map("squarespace_sync_runs")
+}

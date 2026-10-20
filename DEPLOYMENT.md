@@ -17,7 +17,13 @@ The Squarespace import (stage 1 of the migration) is off unless all three are se
 | --- | --- |
 | `SQUARESPACE_API_KEY` | A Squarespace Developer API key with **read-only** Orders, Inventory, Transactions and Forms. The portal's client cannot write to Squarespace whatever the key allows, but a read-only key makes that true twice. |
 | `SQUARESPACE_IMPORT_ENABLED` | `true` to switch the import on. Anything else leaves `/api/squarespace/sync` answering "switched off" — turning it off again needs no code deploy. |
-| `CRON_SECRET` | Bearer token for the scheduled `GET /api/squarespace/sync`. Vercel Cron sends it automatically when set. Unset, only a signed-in Admin can run the import (`POST`). |
+| `CRON_SECRET` | Bearer token for the scheduled `GET /api/squarespace/sync`. Vercel Cron sends it automatically when set. Unset, only a signed-in Admin or Manager can run the import (`POST`). |
+
+When it runs: once a day by Vercel Cron (the Hobby plan's limit), and whenever an
+Admin or Manager has the portal open — the dashboard asks every few minutes and the
+server skips the run if Squarespace was checked in the last ten. "Check now" on the
+Squarespace screen runs it on demand. Each run is logged in `squarespace_sync_runs`;
+the first reads 60 days back, later ones read back to the last good run.
 
 Run `npx tsx scripts/squarespace-import.ts --days=30` first: it is a dry run that
 prints what would be imported and writes nothing. Add `--apply` to write.
@@ -117,7 +123,10 @@ work factor, rotation, lockout, or a session store. Anything real replaces this
 wholesale rather than building on it. It is appropriate for a dummy-data demo on
 a shared link and nothing more — do not put real customer data behind it.
 
-`POST /api/reset` wipes the database back to seed. It takes either a signed-in
+`POST /api/reset` wipes the database back to seed — staff included, rebuilt from
+the development logins whose passwords are in this repository. So on any Vercel
+deployment (all of which share the live database) the route answers 404 for
+everyone and the sidebar button is not built; see `lib/deployment.ts`. Locally it takes either a signed-in
 admin (which is how the sidebar button reaches it — no secret is shipped to the
 browser) or `RESET_TOKEN` as a bearer token. With `RESET_TOKEN` unset the token
 path returns 404 rather than falling back to "no token required".
